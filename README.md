@@ -24,26 +24,6 @@
 | Наказ № 431 | Акт списання, Накладна |
 | Наказ № 818 | Акт прийому/передачі ОЗ |
 
----
-
-## 📁 Структура документації
-
-| Файл | Зміст |
-|------|-------|
-| **README.md** | Цей файл — загальний огляд системи |
-| **[01_Architecture.md](01_Architecture.md)** | Архітектура: схема аркушів, взаємодія модулів, точки входу |
-| **[02_Tables_Structure.md](02_Tables_Structure.md)** | Структура таблиць: AllData, залишки, Named Ranges |
-| **[03_Core_Modules.md](03_Core_Modules.md)** | Базові модулі: functions, checkErrors, ManualAdd, SumInWords, MoveForUnit |
-| **[04_UniversalImport.md](04_UniversalImport.md)** | Модуль UniversalImport — масовий імпорт документів |
-| **[05_Residues_Reports.md](05_Residues_Reports.md)** | Модулі залишків: Residuse, ResiduseOneTroop/Good/People |
-| **[06_Documents_WOff_Invoice.md](06_Documents_WOff_Invoice.md)** | Акти списання та накладні: WOff431/81/19, invoice431, Invoice440_25, payroll440_57 |
-| **[07_Documents_Acts.md](07_Documents_Acts.md)** | Акти ОЗ та заявки: ActRTFA440_23/24, ActRTFA818, ActChangeState/QState, ActPlacement, RequestM |
-| **[08_Reports_AddOns.md](08_Reports_AddOns.md)** | Звіти-додатки: Додаток1, Відомість14, Додаток47, Звітна440_18 |
-| **[09_Reports_Inventory.md](09_Reports_Inventory.md)** | Інвентаризаційні описи оборотних та необоротних активів |
-| **[10_Classes_Forms.md](10_Classes_Forms.md)** | Класи аркушів (wsAllData, wsResiduse2, Аркуш*) та форми (UserForm1, ProgressBar) |
-
----
-
 ## 🗂️ Структура файлів VBA проекту
 
 ### Класи аркушів (.cls)

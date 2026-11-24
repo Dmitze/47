@@ -175,9 +175,11 @@ Sub SaveMoveUnitGoods()
         
         'חבונ³דא÷למ פאיכ
 '        On Error GoTo WrongPath
+         Application.DisplayAlerts = False
          WbNew.SaveAs fileName:=ThisWorkbook.Path & Application.PathSeparator & _
          CleanFileName(WbNew.Worksheets(1).Range("moveUnit").value & _
          fileName & ".xlsx"), FileFormat:=xlOpenXMLWorkbook
+         Application.DisplayAlerts = True
 '     On Error GoTo 0
 '      Exit Sub
 'WrongPath:

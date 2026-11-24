@@ -1,4 +1,5 @@
 Attribute VB_Name = "checkErrors"
+
 Sub HighlightRowsWithAllChecks()
     Dim ws As Worksheet
     Dim lo As ListObject
@@ -119,7 +120,8 @@ Sub HighlightRowsWithAllChecks()
         ' Перевірка узгодженості Надійшло - Запасне поле2
         Dim valZap2 As String
         valZap2 = Trim(rw.Range.Cells(1, colIndex("Запасне поле2")).value)
-        If Len(valNad) > 0 And LCase(valZap2) <> "надходження" Then
+        ' Дозволяємо "внутрішнє переміщення" як при надходженні на склад, так і при видачі
+        If Len(valNad) > 0 And LCase(valZap2) <> "надходження" And LCase(valZap2) <> "внутрішнє переміщення" Then
             rw.Range.Cells(1, colIndex("Запасне поле2")).AddComment _
                 "Змініть тип операції або перемістіть кількість з Надійшло у Вибуло"
             hasIssue = True
@@ -147,7 +149,7 @@ Function IsValidNumber(s As String) As Boolean
         ch = Mid(s, i, 1)
         Select Case ch
             Case "0" To "9"
-            Case ","
+            Case ",", "."
                 dotCount = dotCount + 1
                 If dotCount > 1 Then IsValidNumber = False: Exit Function
             Case Else
@@ -157,5 +159,7 @@ Function IsValidNumber(s As String) As Boolean
     Next i
     IsValidNumber = True
 End Function
+
+
 
 

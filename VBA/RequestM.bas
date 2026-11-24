@@ -75,7 +75,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
             Dim name As String
             Dim Nomenclature As String
             Dim unit As String
-            Dim Category As String
+            Dim category As String
             Dim NoteKt As String
             Dim price As Double
             Dim Service As String
@@ -386,7 +386,7 @@ Set tbActual = wsDoc.ListObjects("tbRequest")
 Dim NameOfThings As String
 Dim Nomenclature As String
 Dim unit As String
-Dim Category As String
+Dim category As String
 
 Dim price As Double
 

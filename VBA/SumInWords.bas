@@ -935,10 +935,10 @@ Sub RegisterUDF()
         "Перший аргумент - число(або посилання на клітинку)" & vbNewLine & _
         "Другий аргумент - валюта"
     
-    Application.MacroOptions Macro:="СумаПрописомАнгл", Description:=s, Category:=9
+    Application.MacroOptions Macro:="СумаПрописомАнгл", Description:=s, category:=9
 End Sub
 
 Sub UnregisterUDF()
-    Application.MacroOptions Macro:="СумаПрописомАнгл", Description:=Empty, Category:=Empty
+    Application.MacroOptions Macro:="СумаПрописомАнгл", Description:=Empty, category:=Empty
 End Sub
 

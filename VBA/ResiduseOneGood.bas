@@ -1,252 +1,265 @@
 Attribute VB_Name = "ResiduseOneGood"
+Option Explicit
+
 Sub ResiduseForGood()
-Dim wbAllData As Workbook
-Dim wsAllData As Worksheet
-Dim wsResiduse As Worksheet
-Dim tbAllData As ListObject
+    Dim wbAllData As Workbook
+    Dim wsAllData As Worksheet
+    Dim wsResiduse As Worksheet
+    Dim wsResiduse2 As Worksheet
+    Dim tbAllData As ListObject
+    Dim tbGoodCriteria As ListObject
 
-Set wbAllData = ThisWorkbook
-Set wsAllData = wbAllData.Worksheets("База")
-Set tbAllData = wsAllData.ListObjects("AllData")
-Set wsResiduse = wbAllData.Worksheets("Залишки по майну")
+    Set wbAllData = ThisWorkbook
+    Set wsAllData = wbAllData.Worksheets("База")
+    Set tbAllData = wsAllData.ListObjects("AllData")
+    Set wsResiduse = wbAllData.Worksheets("Залишки по майну")
+    Set wsResiduse2 = wbAllData.Worksheets("Залишки по підрозділах2")
+    Set tbGoodCriteria = wsResiduse.ListObjects("tbGoodCriteria")
 
-Dim tbGoodCriteria As ListObject
-Set tbGoodCriteria = wsResiduse.ListObjects("tbGoodCriteria")
+    ' Очищаємо критерії попереднього запиту
+    tbGoodCriteria.DataBodyRange.ClearContents
 
-'очищаємо дані з попереднього запиту
-tbGoodCriteria.DataBodyRange.ClearContents
+    Dim frm As UserForm1
+    Set frm = New UserForm1
 
-Dim frm As UserForm1
-Set frm = New UserForm1
-
-'Dim colFrom As Range, colTo As Range, cell As Range
-'Dim dictUnits As Object
-'Set dictUnits = CreateObject("Scripting.Dictionary")
-'
-'Set colFrom = tbAllData.ListColumns("Звідки").DataBodyRange
-'Set colTo = tbAllData.ListColumns("Куди").DataBodyRange
-'
-'' Формуємо словник унікальних підрозділів
-'For Each cell In colFrom
-'    If Not dictUnits.exists(cell.value) And Not IsEmpty(cell.value) Then
-'        dictUnits.Add cell.value, Nothing
-'    End If
-'Next cell
-'
-'For Each cell In colTo
-'    If Not dictUnits.exists(cell.value) And Not IsEmpty(cell.value) Then
-'        dictUnits.Add cell.value, Nothing
-'    End If
-'Next cell
-
-' Виводимо список підрозділів у колонку A, починаючи з A7
-'Dim n As Long
-'n = 7
-'wsResiduse.Range("A7:A" & wsResiduse.Rows.count).ClearContents ' Очистити перед вставкою
-'
-'Dim unitKey As Variant
-'For Each unitKey In dictUnits.Keys
-'    wsResiduse.Cells(n, 1).value = unitKey
-'    n = n + 1
-'Next unitKey
-'
-'' Зчитати назад у масив
-'Dim lastRow As Long
-'lastRow = wsResiduse.Cells(wsResiduse.Rows.count, 1).End(xlUp).Row
-
-'Dim unitArray As Variant
-'unitArray = wsResiduse.Range("A7:A" & lastRow).value
-
-' Передати в ListBox
-'If IsArray(unitArray) Then
     frm.Caption = "Виберіть майно"
     frm.ListData = wsResiduse2.Range("Goods")
-'Else
-'    frm.ListBox1.AddItem unitArray ' якщо один елемент
-'End If
+    frm.show
 
-' Показати форму
-frm.show
+    Dim NameOfThings As String
+    Dim ListGoods As Range
+    Set ListGoods = wsResiduse2.Range("Goods")
 
-Dim NameOfThings As String
-Dim ListGoods As Range
-        Set ListGoods = wsResiduse2.Range("Goods")
-
-' Отримати вибране
-If frm.ListBox1.ListIndex <> -1 Then
-    NameOfThings = frm.TextBox1.value
-Else
-    MsgBox "Майно не вибрано!", vbExclamation
-    Exit Sub
-End If
-
-Set rngWithName = ListGoods.Find(NameOfThings, LookIn:=xlValues, LookAt:=xlWhole)
-'================================закінчив тут, треба відібрати в верхню таблицю-фільтр критерії, якщо вони в полях проставлено "так"
-'відфільтрувати базу даних по цих катергоріях
-'відібрати унікальні підрозділи
-'якщо в них нема залишків не виводити
-'якщо є залишки - вивести в таблицю
-'може зробити mvp тільки по найменуванню?
- If Not rngWithName Is Nothing Then
-            Dim name As String
-            Dim Nomenclature As String
-            Dim unit As String
-            Dim Category As String
-            Dim NoteKt As String
-            Dim price As Double
-            Dim VAT As Double
-            Dim QuantityRest As Double
-            Dim NoteDt As String
-            
-'            Dim Place As String
-            Dim CategoryFrom As String
-            Dim CategoryTo As String
-            Dim Note1 As String
-            Dim Note2 As String
-            Dim Note3 As String
-            'Визначаємо значення за замовчуванням
-       'рядок, де прописуємо "так", якщо хочемо щоб цей параметр включився в пошук
-       Dim rowYes As Long
-       rowYes = 8
-       'найменування
-       If wsResiduse.Cells(rowYes, 1) = "так" Then
-            name = rngWithName.Offset(, -12).value
-       End If
-       'ціна
-       If wsResiduse.Cells(rowYes, 2) = "так" Then
-            price = rngWithName.Offset(, -11).value
-       End If
-       'одиниця виміру
-       If wsResiduse.Cells(rowYes, 3) = "так" Then
-            unit = rngWithName.Offset(, -7).value
-       End If
-       'категорія
-       If wsResiduse.Cells(rowYes, 4) = "так" Then
-            Category = rngWithName.Offset(, -8).value
-       End If
-       'примітка
-       If wsResiduse.Cells(rowYes, 5) = "так" Then
-            Note = rngWithName.Offset(, -9).value
-       End If
-       'код номенклатури
-       If wsResiduse.Cells(rowYes, 6) = "так" Then
-            Nomenclature = rngWithName.Offset(, -6).value
-       End If
-       'додаткове поле 2
-       If wsResiduse.Cells(rowYes, 7) = "так" Then
-           Note2 = rngWithName.Offset(, -4).value
-       End If
-       'додаткове поле 3
-       If wsResiduse.Cells(rowYes, 8) = "так" Then
-            Note3 = rngWithName.Offset(, -3).value
-       End If
-            
-        
-            
-                With tbGoodCriteria.DataBodyRange.Rows
-                    .Cells(1, 1) = name
-                    .Cells(1, 2) = price
-                    .Cells(1, 3) = unit
-                    .Cells(1, 4) = Category
-                    .Cells(1, 5) = Note
-                    .Cells(1, 6) = Nomenclature
-                    .Cells(1, 7) = Note2
-                    .Cells(1, 8) = Note3
-                    
-'                     .Cells(1, 7) = CDbl(quantity)
-'
-'                    .Cells(1, 11) = CategoryTo
-                    
-'                    .Cells(1, 12) = Note1
-                    
-                End With
-           End If
-
-
-
-'
-' wsResiduse.Range("selectedUnit").value = selectedUnit ' Вибраний підрозділ
-' wsResiduse.Range("A7:A" & lastRow).ClearContents
-
-Dim dict As Object
-Set dict = CreateObject("Scripting.Dictionary")
-
-Dim i As Long
-Dim key As Variant
-Dim result As Double
-
-' Очистити старі дані
-wsResiduse.Range("b8:i" & wsResiduse.Rows.count).ClearContents
-
-Dim dataCount As Long
-dataCount = tbAllData.ListRows.count
-
-' Формуємо унікальні ключі на основі декількох полів
-For i = 1 To dataCount
-    If tbAllData.DataBodyRange(i, tbAllData.ListColumns("Куди").Index).value = selectedUnit _
-    Or tbAllData.DataBodyRange(i, tbAllData.ListColumns("Звідки").Index).value = selectedUnit Then
-    
-      Dim dynamicCategory As String
-
-' Вибираємо значення для категорії в залежності від напрямку
-If tbAllData.DataBodyRange(i, tbAllData.ListColumns("Куди").Index).value = selectedUnit Then
-    dynamicCategory = tbAllData.DataBodyRange(i, tbAllData.ListColumns("Запасне поле3").Index).value
-Else
-    dynamicCategory = tbAllData.DataBodyRange(i, tbAllData.ListColumns("Категорія").Index).value
-End If
-
-key = tbAllData.DataBodyRange(i, tbAllData.ListColumns("Код номенклатури").Index).value & "||" & _
-      tbAllData.DataBodyRange(i, tbAllData.ListColumns("Найменування").Index).value & "||" & _
-      tbAllData.DataBodyRange(i, tbAllData.ListColumns("Ціна").Index).value & "||" & _
-      tbAllData.DataBodyRange(i, tbAllData.ListColumns("Одиниця виміру").Index).value & "||" & _
-      dynamicCategory & "||" & _
-      tbAllData.DataBodyRange(i, tbAllData.ListColumns("Примітка").Index).value
-
-
-        If Not dict.exists(key) Then
-            dict.Add key, 0
-        End If
-        
-        ' Додаємо/віднімаємо залишок
-        If tbAllData.DataBodyRange(i, tbAllData.ListColumns("Куди").Index).value = selectedUnit Then
-            dict(key) = dict(key) + tbAllData.DataBodyRange(i, tbAllData.ListColumns("Надійшло").Index).value
-            dict(key) = dict(key) + tbAllData.DataBodyRange(i, tbAllData.ListColumns("Вибуло").Index).value
-        End If
-        
-        If tbAllData.DataBodyRange(i, tbAllData.ListColumns("Звідки").Index).value = selectedUnit Then
-            dict(key) = dict(key) - tbAllData.DataBodyRange(i, tbAllData.ListColumns("Вибуло").Index).value
-        End If
+    If frm.ListBox1.ListIndex <> -1 Then
+        NameOfThings = frm.TextBox1.value
+    Else
+        MsgBox "Майно не вибрано!", vbExclamation
+        Exit Sub
     End If
-Next i
 
-' Виводимо результати
-Dim rowIndex As Long
-rowIndex = 8
-Dim parts() As String
+    Dim rngWithName As Range
+    Set rngWithName = ListGoods.Find(NameOfThings, LookIn:=xlValues, LookAt:=xlWhole)
 
-Dim k As Long
-Dim totalKeys As Long
-Dim allKeys As Variant
+    Dim critName As String, critPrice As Double, critUnit As String
+    Dim critCat As String, critNote As String, critNom As String
+    Dim crit11 As String, crit12 As String
+    Dim useName As Boolean, usePrice As Boolean, useUnit As Boolean
+    Dim useCat As Boolean, useNote As Boolean, useNom As Boolean
+    Dim use11 As Boolean, use12 As Boolean
 
-allKeys = dict.Keys
-totalKeys = dict.count
-d = 0
-For k = 1 To totalKeys
-    If dict(allKeys(k - 1)) <> 0 Then
-        parts = Split(allKeys(k - 1), "||")
-        d = d + 1
-        wsResiduse.Cells(rowIndex, 2).value = d
-        wsResiduse.Cells(rowIndex, 3).value = parts(1) ' Найменування
-        wsResiduse.Cells(rowIndex, 4).value = CDbl(parts(2)) ' Ціна
-        wsResiduse.Cells(rowIndex, 5).value = CDbl(dict(allKeys(k - 1))) ' Залишок
-        wsResiduse.Cells(rowIndex, 6).value = parts(5) ' Примітка
-        wsResiduse.Cells(rowIndex, 7).value = parts(4) ' Категорія
-        wsResiduse.Cells(rowIndex, 8).value = parts(3) ' Одиниця виміру
-        wsResiduse.Cells(rowIndex, 9).value = parts(0) ' Код номенклатури
-        rowIndex = rowIndex + 1
+    Dim rowYes As Long
+    rowYes = 8
+
+    If Not rngWithName Is Nothing Then
+        If wsResiduse.Cells(rowYes, 1).value = "так" Then
+            critName = CStr(rngWithName.Offset(, -12).value)
+            useName = True
+        End If
+        If wsResiduse.Cells(rowYes, 2).value = "так" Then
+            critPrice = val(Replace(CStr(rngWithName.Offset(, -11).value), ",", "."))
+            usePrice = True
+        End If
+        If wsResiduse.Cells(rowYes, 3).value = "так" Then
+            critUnit = CStr(rngWithName.Offset(, -7).value)
+            useUnit = True
+        End If
+        If wsResiduse.Cells(rowYes, 4).value = "так" Then
+            critCat = CStr(rngWithName.Offset(, -8).value)
+            useCat = True
+        End If
+        If wsResiduse.Cells(rowYes, 5).value = "так" Then
+            critNote = CStr(rngWithName.Offset(, -9).value)
+            useNote = True
+        End If
+        If wsResiduse.Cells(rowYes, 6).value = "так" Then
+            critNom = CStr(rngWithName.Offset(, -6).value)
+            useNom = True
+        End If
+        If wsResiduse.Cells(rowYes, 7).value = "так" Then
+            crit11 = CStr(rngWithName.Offset(, -4).value)
+            use11 = True
+        End If
+        If wsResiduse.Cells(rowYes, 8).value = "так" Then
+            crit12 = CStr(rngWithName.Offset(, -3).value)
+            use12 = True
+        End If
+
+        With tbGoodCriteria.DataBodyRange.Rows(1)
+            .Cells(1, 1).value = critName
+            .Cells(1, 2).value = critPrice
+            .Cells(1, 3).value = critUnit
+            .Cells(1, 4).value = critCat
+            .Cells(1, 5).value = critNote
+            .Cells(1, 6).value = critNom
+            .Cells(1, 7).value = crit11
+            .Cells(1, 8).value = crit12
+        End With
     End If
-    
-    Call ProgressBar.Progress(k / totalKeys * 100)
-Next k
+
+    ' Очищаємо старі дані таблиці починаючи з рядка 10
+    wsResiduse.Range("A10:J" & wsResiduse.Rows.count).ClearContents
+
+    Dim cFrom As Long, cTo As Long, cIn As Long, cOut As Long, cOpType As Long
+    Dim cName As Long, cCode As Long, cPrice As Long, cUnit As Long
+    Dim cCat As Long, cCat3 As Long, cNote As Long, c11 As Long, c12 As Long
+
+    With tbAllData
+        cFrom = .ListColumns("Звідки").Index
+        cTo = .ListColumns("Куди").Index
+        cIn = .ListColumns("Надійшло").Index
+        cOut = .ListColumns("Вибуло").Index
+        cOpType = .ListColumns("Запасне поле2").Index
+        cName = .ListColumns("Найменування").Index
+        cCode = .ListColumns("Код номенклатури").Index
+        cPrice = .ListColumns("Ціна").Index
+        cUnit = .ListColumns("Одиниця виміру").Index
+        cCat = .ListColumns("Категорія").Index
+        cCat3 = .ListColumns("Запасне поле3").Index
+        cNote = .ListColumns("Примітка").Index
+        c11 = .ListColumns("Поле 11").Index
+        c12 = .ListColumns("Поле 12").Index
+    End With
+
+    ' Словник: Unit -> Key (де Key містить параметри майна) -> Кількість
+    Dim dictUnits As Object
+    Set dictUnits = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long, dataCount As Long
+    dataCount = tbAllData.ListRows.count
+
+    Dim rName As String, rUnit As String, rCode As String, rNote As String
+    Dim r11 As String, r12 As String, rFrom As String, rTo As String, opType As String
+    Dim rPrice As Double, vIn As Double, vOut As Double, movQty As Double
+    Dim matchItem As Boolean
+
+    For i = 1 To dataCount
+        rName = CStr(tbAllData.DataBodyRange(i, cName).value)
+        
+        ' Перевіряємо базову відповідність обраному найменуванню
+        If InStr(1, rName, NameOfThings, vbTextCompare) > 0 Or (useName And rName = critName) Then
+            matchItem = True
+            
+            If usePrice Then
+                If val(Replace(CStr(tbAllData.DataBodyRange(i, cPrice).value), ",", ".")) <> critPrice Then matchItem = False
+            End If
+            If useUnit And matchItem Then
+                If CStr(tbAllData.DataBodyRange(i, cUnit).value) <> critUnit Then matchItem = False
+            End If
+            If useNom And matchItem Then
+                If CStr(tbAllData.DataBodyRange(i, cCode).value) <> critNom Then matchItem = False
+            End If
+            If useNote And matchItem Then
+                If CStr(tbAllData.DataBodyRange(i, cNote).value) <> critNote Then matchItem = False
+            End If
+            If use11 And matchItem Then
+                If CStr(tbAllData.DataBodyRange(i, c11).value) <> crit11 Then matchItem = False
+            End If
+            If use12 And matchItem Then
+                If CStr(tbAllData.DataBodyRange(i, c12).value) <> crit12 Then matchItem = False
+            End If
+
+            If matchItem Then
+                rFrom = Trim(CStr(tbAllData.DataBodyRange(i, cFrom).value))
+                rTo = Trim(CStr(tbAllData.DataBodyRange(i, cTo).value))
+                opType = LCase(Trim(CStr(tbAllData.DataBodyRange(i, cOpType).value)))
+
+                vIn = 0#: vOut = 0#
+                If IsNumeric(tbAllData.DataBodyRange(i, cIn).value) Then vIn = CDbl(tbAllData.DataBodyRange(i, cIn).value)
+                If IsNumeric(tbAllData.DataBodyRange(i, cOut).value) Then vOut = CDbl(tbAllData.DataBodyRange(i, cOut).value)
+
+                Dim itemInfo As String, catTo As String, catFrom As String
+                catTo = CStr(tbAllData.DataBodyRange(i, cCat3).value)
+                If Len(Trim(catTo)) = 0 Then catTo = CStr(tbAllData.DataBodyRange(i, cCat).value)
+                catFrom = CStr(tbAllData.DataBodyRange(i, cCat).value)
+
+                Select Case opType
+                    Case "надходження"
+                        If Len(rTo) > 0 And vIn <> 0 Then
+                            itemInfo = rName & "||" & CStr(tbAllData.DataBodyRange(i, cPrice).value) & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, cUnit).value) & "||" & catTo & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, cNote).value) & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, cCode).value) & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, c11).value) & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, c12).value) & "||" & rTo
+                            If Not dictUnits.exists(itemInfo) Then dictUnits.Add itemInfo, 0#
+                            dictUnits(itemInfo) = dictUnits(itemInfo) + vIn
+                        End If
+
+                    Case "вибуття"
+                        If Len(rFrom) > 0 And vOut <> 0 Then
+                            itemInfo = rName & "||" & CStr(tbAllData.DataBodyRange(i, cPrice).value) & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, cUnit).value) & "||" & catFrom & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, cNote).value) & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, cCode).value) & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, c11).value) & "||" & _
+                                       CStr(tbAllData.DataBodyRange(i, c12).value) & "||" & rFrom
+                            If Not dictUnits.exists(itemInfo) Then dictUnits.Add itemInfo, 0#
+                            dictUnits(itemInfo) = dictUnits(itemInfo) - vOut
+                        End If
+
+                    Case "внутрішнє переміщення"
+                        movQty = vOut
+                        If movQty = 0 Then movQty = vIn
+
+                        If movQty <> 0 Then
+                            If Len(rTo) > 0 Then
+                                itemInfo = rName & "||" & CStr(tbAllData.DataBodyRange(i, cPrice).value) & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, cUnit).value) & "||" & catTo & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, cNote).value) & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, cCode).value) & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, c11).value) & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, c12).value) & "||" & rTo
+                                If Not dictUnits.exists(itemInfo) Then dictUnits.Add itemInfo, 0#
+                                dictUnits(itemInfo) = dictUnits(itemInfo) + movQty
+                            End If
+
+                            If Len(rFrom) > 0 Then
+                                itemInfo = rName & "||" & CStr(tbAllData.DataBodyRange(i, cPrice).value) & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, cUnit).value) & "||" & catFrom & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, cNote).value) & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, cCode).value) & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, c11).value) & "||" & _
+                                           CStr(tbAllData.DataBodyRange(i, c12).value) & "||" & rFrom
+                                If Not dictUnits.exists(itemInfo) Then dictUnits.Add itemInfo, 0#
+                                dictUnits(itemInfo) = dictUnits(itemInfo) - movQty
+                            End If
+                        End If
+                End Select
+            End If
+        End If
+    Next i
+
+    ' Виведення результатів з рядка 10
+    Dim rowIndex As Long
+    rowIndex = 10
+    Dim parts() As String
+    Dim k As Long, totalKeys As Long, allKeys As Variant
+    Dim currentQty As Double
+
+    allKeys = dictUnits.Keys
+    totalKeys = dictUnits.count
+
+    For k = 1 To totalKeys
+        currentQty = dictUnits(allKeys(k - 1))
+        If Round(currentQty, 6) <> 0 Then
+            parts = Split(allKeys(k - 1), "||")
+            wsResiduse.Cells(rowIndex, 1).value = parts(0) ' Найменування
+            wsResiduse.Cells(rowIndex, 2).value = CDbl(parts(1)) ' Ціна
+            wsResiduse.Cells(rowIndex, 3).value = parts(2) ' Одиниця виміру
+            wsResiduse.Cells(rowIndex, 4).value = parts(3) ' Категорія
+            wsResiduse.Cells(rowIndex, 5).value = parts(4) ' Примітка
+            wsResiduse.Cells(rowIndex, 6).value = parts(5) ' Код номенклатури
+            wsResiduse.Cells(rowIndex, 7).value = parts(6) ' Поле 11
+            wsResiduse.Cells(rowIndex, 8).value = parts(7) ' Поле 12
+            wsResiduse.Cells(rowIndex, 9).value = currentQty ' Кількість
+            wsResiduse.Cells(rowIndex, 10).value = parts(8) ' Підрозділ
+            rowIndex = rowIndex + 1
+        End If
+        If totalKeys > 0 Then Call ProgressBar.Progress(k / totalKeys * 100)
+    Next k
+
+    If wsResiduse.AutoFilterMode Then wsResiduse.AutoFilterMode = False
+    wsResiduse.Range("A9").CurrentRegion.AutoFilter
+
+    MsgBox "Пошук завершено. Знайдено підрозділів з залишками: " & (rowIndex - 10), vbInformation, "Залишки по майну"
 End Sub
-

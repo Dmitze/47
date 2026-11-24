@@ -75,7 +75,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
             Dim name As String
             Dim Nomenclature As String
             Dim unit As String
-            Dim Category As String
+            Dim category As String
             Dim NoteKt As String
             Dim price As Double
             Dim VAT As Double
@@ -124,7 +124,7 @@ NextIteration:
                   
             
             
-            Category = InputBox("Категорія відправника: ", NameOfThings, rngWithName.Offset(, -8).value)
+            category = InputBox("Категорія відправника: ", NameOfThings, rngWithName.Offset(, -8).value)
             
             CategoryTo = InputBox("Категорія отримувача: ", NameOfThings, rngWithName.Offset(, -8).value)
 '            VAT = InputBox("ПДВ (за наявності): ", NameOfThings, 0)
@@ -168,7 +168,7 @@ NextIteration:
                     .Cells(1, 18) = name
                     .Cells(1, 3) = Nomenclature
                     .Cells(1, 4) = unit
-                    .Cells(1, 5) = Category
+                    .Cells(1, 5) = category
                     .Cells(1, 7) = price
                     .Cells(1, 6) = CDbl(quantity)
                     .Cells(1, 19) = Note
@@ -198,7 +198,7 @@ NextIteration:
                     .Cells(1, 11) = name
                     .Cells(1, 12) = Nomenclature
                     .Cells(1, 13) = unit
-                    .Cells(1, 14) = Category
+                    .Cells(1, 14) = category
                     .Cells(1, 16) = price
                     .Cells(1, 15) = CDbl(quantity)
                     .Cells(1, 20) = Note
@@ -446,7 +446,7 @@ Set tbActual = wsDoc.ListObjects("tbActChangeState81_14")
 Dim NameOfThings As String
 Dim Nomenclature As String
 Dim unit As String
-Dim Category As String
+Dim category As String
 
 Dim price As Double
 
@@ -570,10 +570,10 @@ Dim listOfThings As String
             unit = rw.Cells(1, colUnit)
             
             If qKategory = vbYes Then
-                Category = InputBox("Категорія відправника:", NameOfThings, rw.Cells(1, colCategory))
+                category = InputBox("Категорія відправника:", NameOfThings, rw.Cells(1, colCategory))
                 CategoryTo = InputBox("Категорія отримувача:", NameOfThings, rw.Cells(1, colCategory))
             Else
-                Category = rw.Cells(1, colCategory)
+                category = rw.Cells(1, colCategory)
                 CategoryTo = rw.Cells(1, colCategory)
             End If
             
@@ -610,7 +610,7 @@ Dim listOfThings As String
                     .Cells(1, 18) = NameOfThings
                     .Cells(1, 3) = Nomenclature
                     .Cells(1, 4) = unit
-                    .Cells(1, 5) = Category
+                    .Cells(1, 5) = category
                     .Cells(1, 7) = price
                     .Cells(1, 6) = CDbl(quantity)
                     .Cells(1, 19) = Note
@@ -626,7 +626,7 @@ Dim listOfThings As String
                     .Cells(1, 18) = NameOfThings
                     .Cells(1, 3) = Nomenclature
                     .Cells(1, 4) = unit
-                    .Cells(1, 5) = Category
+                    .Cells(1, 5) = category
                     .Cells(1, 7) = price
                     .Cells(1, 6) = CDbl(quantity)
                     .Cells(1, 19) = Note

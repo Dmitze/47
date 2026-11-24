@@ -63,7 +63,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
             Dim name As String
             Dim Nomenclature As String
             Dim unit As String
-            Dim Category As String
+            Dim category As String
             Dim SubAccountKt As String
             Dim price As Double
             Dim QuantityRest As Double
@@ -96,7 +96,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
 
 '            NoteDt = InputBox("Субрахунок для списання, залишити 1 (якщо не знаєте який - залишіть порожнім): ", NameOfThings, "6611 8013 8113")
             
-            Category = InputBox("Категорія відправника: ", NameOfThings, rngWithName.Offset(, -8).value)
+            category = InputBox("Категорія відправника: ", NameOfThings, rngWithName.Offset(, -8).value)
 '            CategoryTo = InputBox("Категорія отримувача: ", NameOfThings, rngWithName.Offset(, -8).value)
             CategoryTo = InputBox("Категорія для списання (категорія отримувача)не обов'язково: ", NameOfThings)
 '            VAT = InputBox("ПДВ (за наявності): ", NameOfThings, 0)
@@ -115,7 +115,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
                     .Cells(1, 10) = SubAccount
                     .Cells(1, 9) = SubAccountDt
                     .Cells(1, 8) = Basis
-                    .Cells(1, 11) = Category
+                    .Cells(1, 11) = category
 '                    .Cells(1, 12) = CategoryFrom
                     .Cells(1, 12) = CategoryTo
 '                    .Cells(1, 13) = Note1
@@ -134,7 +134,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
                     .Cells(1, 10) = SubAccount
                     .Cells(1, 9) = SubAccountDt
                     .Cells(1, 8) = Basis
-                    .Cells(1, 11) = Category
+                    .Cells(1, 11) = category
                     .Cells(1, 12) = CategoryTo
 '                    .Cells(1, 13) = Note1
                     .Cells(1, 14) = Note2

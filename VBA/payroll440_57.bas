@@ -67,7 +67,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
             Dim name As String
             Dim Nomenclature As String
             Dim unit As String
-            Dim Category As String
+            Dim category As String
             Dim NoteKt As String
             Dim price As Double
             Dim VAT As Double
@@ -119,7 +119,7 @@ answerYes:
             
            
             
-            Category = InputBox("Категорія відправника: ", NameOfThings, rngWithName.Offset(, -8).value)
+            category = InputBox("Категорія відправника: ", NameOfThings, rngWithName.Offset(, -8).value)
             CategoryTo = InputBox("Категорія отримувача: ", NameOfThings, rngWithName.Offset(, -8).value)
 '            VAT = InputBox("ПДВ (за наявності): ", NameOfThings, 0)
 '            Note1 = InputBox("Додаткове поле 1", NameOfThings, rngWithName.Offset(, -5).value)
@@ -131,7 +131,7 @@ answerYes:
                 .Cells(assetRow, assetCol).value = name
                 .Cells(14, assetCol).value = Nomenclature
                 .Cells(16, assetCol).value = unit
-                .Cells(18, assetCol).value = Category
+                .Cells(18, assetCol).value = category
                 .Cells(20, assetCol).value = price
                 .Cells(22, assetCol).value = CategoryTo
                 .Cells(24, assetCol).value = Note

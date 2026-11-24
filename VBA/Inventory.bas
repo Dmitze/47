@@ -1,20 +1,24 @@
 Attribute VB_Name = "Inventory"
+
 'Inventory Формування інвентаризиційного опису
 
 Option Explicit
 
-' === Головна процедура: формує Інвентаризаційний опис з проміжними підсумками по рахунках ===
-Public Sub BuildInventoryReport()
+' === Головна процедура: формує Інвентаризаційний опис НА з проміжними підсумками по рахунках ===
+Public Sub BuildInventoryReportNCA()
 '(ByVal unitFilter As String)
     Dim unitFilter As String
     Dim wsSrc As Worksheet, ws As Worksheet
     Dim lastRow As Long, r As Long
 
-    Dim dictBal As Object, dictUom As Object, dictCode As Object, dictPrice As Object, dictAccount As Object
+    Dim dictBal As Object, dictUom As Object, dictCode As Object, dictPrice As Object, dictAccount As Object 'довідники
+    Dim dictSerialNumber As Object
     Dim itemName As String, uom As String, itemCode As String
     Dim unitIn As String, unitOut As String, opType As String
+    Dim SerialNumber As String
     Dim qty As Double, price As Double, d As Date, key As String
     Dim account As String
+    Dim invDateCutoff As Date
 
     Dim outRow As Long
     Dim k As Variant, parts As Variant, bal As Double
@@ -27,7 +31,7 @@ Public Sub BuildInventoryReport()
     Dim keysSorted As Variant
     Dim kIdx As Long
     Dim totalRow As Long, lastPos As Long
-    
+
     Dim wbAllData As Workbook
     Dim wsAllData As Worksheet
     Dim wsReportingMove As Worksheet
@@ -37,65 +41,65 @@ Public Sub BuildInventoryReport()
     Set wbAllData = ThisWorkbook
     Set wsAllData = wbAllData.Worksheets("База")
     Set tbAllData = wsAllData.ListObjects("AllData")
-    
+
     ' --- Підготовка аркуша призначення ---
     On Error Resume Next
-    Set ws = ThisWorkbook.Sheets("Інвентаризаційний опис")
+    Set ws = ThisWorkbook.Sheets("Інвентаризаційний опис НА")
     If ws Is Nothing Then
         Set ws = ThisWorkbook.Sheets.Add(After:=wsSrc)
-        ws.name = "Інвентаризаційний опис"
+        ws.name = "Інвентаризаційний опис НА"
     End If
     On Error GoTo 0
-    
-    
+
+
             Dim frm As UserForm1
             Set frm = New UserForm1
-            
+
             Dim colFrom As Range, colTo As Range, celll As Range
             Dim dictUnits As Object
             Set dictUnits = CreateObject("Scripting.Dictionary")
-            
+
             Set colFrom = tbAllData.ListColumns("Звідки").DataBodyRange
             Set colTo = tbAllData.ListColumns("Куди").DataBodyRange
-            
+
             ' Формуємо словник унікальних підрозділів
             For Each celll In colFrom
                 If Not dictUnits.exists(celll.value) And Not IsEmpty(celll.value) Then
                     dictUnits.Add celll.value, Nothing
                 End If
             Next celll
-            
+
             For Each celll In colTo
                 If Not dictUnits.exists(celll.value) And Not IsEmpty(celll.value) Then
                     dictUnits.Add celll.value, Nothing
                 End If
             Next celll
-            
-            
+
+
             Dim wsTroops As Worksheet
             Set wsTroops = wbAllData.Worksheets("Підрозділи")
-            
+
             Dim t As Long
             t = 1
             wsTroops.Range("A1:A" & wsTroops.Rows.count).ClearContents ' Очистити перед вставкою
-            
+
             Dim unitKey As Variant
             For Each unitKey In dictUnits.Keys
                 wsTroops.Cells(t, 1).value = unitKey
                 t = t + 1
             Next unitKey
-            
+
             ' Зчитати назад у масив
             Dim lastRowT As Long
             lastRowT = wsTroops.Cells(wsTroops.Rows.count, 1).End(xlUp).Row
-            
-            
+
+
             frm.Caption = "Виберіть підрозділ"
             frm.ListData = wsTroops.Range("A1:A" & lastRowT)
-            
+
              ' Показати форму
             frm.show
-            
+
             ' Отримати вибране
             If frm.ListBox1.ListIndex <> -1 Then
                 unitFilter = frm.ListBox1.value
@@ -103,8 +107,8 @@ Public Sub BuildInventoryReport()
                 MsgBox "Підрозділ не вибрано!", vbExclamation
                 Exit Sub
             End If
-    
-      
+
+
 'список субрахунків відповідно до вибраного типу
 Dim dictAllowedAccounts As Object
 Dim tbAccaunts As ListObject
@@ -119,6 +123,11 @@ dictAllowedAccounts.CompareMode = vbTextCompare
 Set tbAccaunts = ThisWorkbook.Worksheets("Довідники").ListObjects("tbAccaunts")
 
 selectedAccountType = ws.Range("invAccauntType").value
+' Дата зрізу інвентаризації: операції з датою документа пізніше цієї дати не враховуються
+invDateCutoff = 0
+On Error Resume Next
+If IsDate(ws.Range("invAsOf").value) Then invDateCutoff = CDate(ws.Range("invAsOf").value)
+On Error GoTo 0
 
 ' Формуємо перелік дозволених субрахунків
 For Each accRow In tbAccaunts.ListRows
@@ -153,90 +162,100 @@ Next accRow
     Set dictCode = CreateObject("Scripting.Dictionary")
     Set dictPrice = CreateObject("Scripting.Dictionary")
     Set dictAccount = CreateObject("Scripting.Dictionary")
+    Set dictSerialNumber = CreateObject("Scripting.Dictionary")
 
     ' --- Обхід рядків БАЗИ: накопичення балансу по unitFilter ---
     For r = 2 To lastRow
-        If IsDate(wsSrc.Cells(r, "A").value) Then
-            d = CDate(wsSrc.Cells(r, "A").value)
-        Else
-            GoTo NextRow
+        If invDateCutoff > 0 Then
+            If IsDate(wsSrc.Cells(r, "M").value) Then
+                If CDate(wsSrc.Cells(r, "M").value) > invDateCutoff Then GoTo NextRow
+            ElseIf IsDate(wsSrc.Cells(r, "A").value) Then
+                If CDate(wsSrc.Cells(r, "A").value) > invDateCutoff Then GoTo NextRow
+            End If
         End If
 
-        itemName = Trim$(CStr(wsSrc.Cells(r, "B").value))
+        itemName = Trim$(CStr(wsSrc.Cells(r, "B").value)) 'найменування
         If itemName = "" Then GoTo NextRow
 
-        itemCode = Trim$(CStr(wsSrc.Cells(r, "R").value))
-        uom = Trim$(CStr(wsSrc.Cells(r, "D").value))
-        unitOut = Trim$(CStr(wsSrc.Cells(r, "H").value))
-        unitIn = Trim$(CStr(wsSrc.Cells(r, "I").value))
-        opType = LCase$(Trim$(CStr(wsSrc.Cells(r, "Z").value)))
-        account = Trim$(CStr(wsSrc.Cells(r, "X").value))
-        
+        itemCode = Trim$(CStr(wsSrc.Cells(r, "R").value)) 'код номенклатури
+        uom = Trim$(CStr(wsSrc.Cells(r, "D").value)) 'одиниця виміру
+        unitOut = Trim$(CStr(wsSrc.Cells(r, "H").value)) 'підрозділ звідки
+        unitIn = Trim$(CStr(wsSrc.Cells(r, "I").value)) 'підрозділ куди
+        opType = LCase$(Trim$(CStr(wsSrc.Cells(r, "Z").value))) 'тип операції
+        account = Trim$(CStr(wsSrc.Cells(r, "X").value)) 'субрахунок
+        SerialNumber = Trim$(CStr(wsSrc.Cells(r, "P").value)) 'серійний номер
+
         If Not dictAllowedAccounts.exists(account) Then GoTo NextRow
-        
+
         price = 0#
         If IsNumeric(wsSrc.Cells(r, "T").value) Then
             price = CDbl(wsSrc.Cells(r, "T").value)
         End If
 
-' === 3.9.27 ===
         ' Ключ групування: itemName|price (можна змінити на інший варіант)
-        key = itemName & "|" & CStr(price) & "|" & CStr(uom) & "|" & CStr(itemCode)
-'key = itemName & "|" & CStr(price)
-' === 3.9.27 ===
+        key = itemName & "|" & CStr(price) & "|" & CStr(uom) & "|" & CStr(itemCode) & "|" & CStr(SerialNumber)
 
-' --- Надходження ---
-        If opType = "надходження" And IsNumeric(wsSrc.Cells(r, "F").value) Then
-            qty = CDbl(wsSrc.Cells(r, "F").value)
-            If unitIn = unitFilter Then
-                AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, key, qty, uom, itemCode, price, account
+        ' --- Надходження ---
+        If opType = "надходження" Then
+            qty = 0#
+            If IsNumeric(wsSrc.Cells(r, "F").value) Then qty = CDbl(wsSrc.Cells(r, "F").value)
+            If qty = 0# And IsNumeric(wsSrc.Cells(r, "G").value) Then qty = CDbl(wsSrc.Cells(r, "G").value)
+            If qty <> 0# And unitIn = unitFilter Then
+                AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, qty, uom, itemCode, price, account, SerialNumber
             End If
         End If
 
         ' --- Внутрішнє переміщення ---
-        If opType = "внутрішнє переміщення" And IsNumeric(wsSrc.Cells(r, "G").value) Then
-            qty = CDbl(wsSrc.Cells(r, "G").value)
-            If unitOut = unitFilter Then
-                AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, key, -qty, uom, itemCode, price, account
-            End If
-            If unitIn = unitFilter Then
-                AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, key, qty, uom, itemCode, price, account
+        If opType = "внутрішнє переміщення" Then
+            qty = 0#
+            If IsNumeric(wsSrc.Cells(r, "G").value) Then qty = CDbl(wsSrc.Cells(r, "G").value)
+            If qty = 0# And IsNumeric(wsSrc.Cells(r, "F").value) Then qty = CDbl(wsSrc.Cells(r, "F").value)
+            If qty <> 0# Then
+                If unitOut = unitFilter Then
+                    AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, -qty, uom, itemCode, price, account, SerialNumber
+                End If
+                If unitIn = unitFilter Then
+                    AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, qty, uom, itemCode, price, account, SerialNumber
+                End If
             End If
         End If
 
         ' --- Вибуття ---
-        If opType = "вибуття" And IsNumeric(wsSrc.Cells(r, "G").value) Then
-            qty = CDbl(wsSrc.Cells(r, "G").value)
-            If unitOut = unitFilter Then
-                AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, key, -qty, uom, itemCode, price, account
+        If opType = "вибуття" Then
+            qty = 0#
+            If IsNumeric(wsSrc.Cells(r, "G").value) Then qty = CDbl(wsSrc.Cells(r, "G").value)
+            If qty = 0# And IsNumeric(wsSrc.Cells(r, "F").value) Then qty = CDbl(wsSrc.Cells(r, "F").value)
+            If qty <> 0# And unitOut = unitFilter Then
+                AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, -qty, uom, itemCode, price, account, SerialNumber
             End If
         End If
 
 NextRow:
     Next r
 
-    
-    
-            
+
+
+
      ' Записати найменування підрозділу
      ws.Range("invUnit") = "у " & unitFilter
-     
+
      ' Формуємо перелік задіяних субрахунків
      FillInventorySubaccounts dictAccount
-    
+
     ' Очистити аркуш
     Dim ivnLastRowTable As Long 'клітинка, де фраза "Разом за описом"
     ivnLastRowTable = ws.Range("ivnLastRowTable").Row
-    
-    ws.Range("A24:L" & ivnLastRowTable - 2).Delete
 
-   
+    ws.Range("A25:Q" & ivnLastRowTable - 2).Delete
+
+
     ' --- Вивантаження з груповими підсумками і проміжними підсумками по рахунках ---
-    outRow = 24
+    outRow = 25
     prevName = ""
     prevAccount = ""
     posCounter = 1
     groupStartRow = 0
+
     sumF = 0#: sumH = 0#: sumI = 0#: sumK = 0#
     accF = 0#: accH = 0#: acci = 0#: accK = 0#
     grandF = 0#: grandH = 0#: grandI = 0#: grandK = 0#
@@ -255,14 +274,14 @@ NextRow:
             If prevAccount <> "" And currentAccount <> prevAccount Then
                 ' Закрити останню групу попереднього рахунку, якщо вона відкрита
                 If prevName <> "" Then
-                
+
                 ws.Rows(outRow).Insert Shift:=xlDown
-                
-                    ws.Cells(outRow, 3).value = "ВСЬОГО " & prevName
-                    ws.Cells(outRow, 6).value = sumF
-                    ws.Cells(outRow, 8).value = sumH
-                    ws.Cells(outRow, 9).value = sumI
-                    ws.Cells(outRow, 11).value = sumK
+
+                    ws.Cells(outRow, 2).value = "ВСЬОГО " & prevName 'Всього + найменування
+                    ws.Cells(outRow, 8).value = sumF 'кількість фактично
+                    ws.Cells(outRow, 17).value = sumH 'сума
+                    ws.Cells(outRow, 11).value = sumI 'кількість за даними БО
+'                    ws.Cells(outRow, 11).value = sumK
                     ws.Rows(outRow).Font.Bold = True
 
                     If groupStartRow > 0 Then
@@ -284,7 +303,7 @@ NextRow:
                     accF = accF + sumF
                     accH = accH + sumH
                     acci = acci + sumI
-                    accK = accK + sumK
+'                    accK = accK + sumK
 
                     outRow = outRow + 1
                     sumF = 0#: sumH = 0#: sumI = 0#: sumK = 0#
@@ -293,26 +312,26 @@ NextRow:
                 End If
 
                 ' Виводимо проміжний підсумок по попередньому рахунку
-                
+
                 ws.Rows(outRow).Insert Shift:=xlDown
-                
-                ws.Range("A" & outRow & ":E" & outRow).Merge
+
+                ws.Range("A" & outRow & ":G" & outRow).Merge
                 ws.Range("A" & outRow).value = "ВСЬОГО по рахунку " & prevAccount
                 ws.Range("A" & outRow).HorizontalAlignment = xlCenter
                 ws.Range("A" & outRow).VerticalAlignment = xlCenter
                 ws.Range("A" & outRow).Font.Bold = True
 
-                ws.Cells(outRow, 6).value = accF
-                ws.Cells(outRow, 8).value = accH
-                ws.Cells(outRow, 9).value = acci
-                ws.Cells(outRow, 11).value = accK
+                ws.Cells(outRow, 8).value = accF
+                ws.Cells(outRow, 17).value = accH
+                ws.Cells(outRow, 11).value = acci
+'                ws.Cells(outRow, 11).value = accK
                 ws.Rows(outRow).Font.Bold = True
 
                 ' Додаємо до загального підсумку
                 grandF = grandF + accF
                 grandH = grandH + accH
                 grandI = grandI + acci
-                grandK = grandK + accK
+'                grandK = grandK + accK
 
                 outRow = outRow + 1
 
@@ -322,14 +341,14 @@ NextRow:
 
             ' Якщо змінилась група найменування — закриваємо попередню групу
             If prevName <> "" And currentName <> prevName Then
-            
+
             ws.Rows(outRow).Insert Shift:=xlDown
-            
-                ws.Cells(outRow, 3).value = "ВСЬОГО " & prevName
-                ws.Cells(outRow, 6).value = sumF
-                ws.Cells(outRow, 8).value = sumH
-                ws.Cells(outRow, 9).value = sumI
-                ws.Cells(outRow, 11).value = sumK
+
+                ws.Cells(outRow, 2).value = "ВСЬОГО " & prevName
+                ws.Cells(outRow, 8).value = sumF
+                ws.Cells(outRow, 17).value = sumH
+                ws.Cells(outRow, 11).value = sumI
+'                ws.Cells(outRow, 11).value = sumK
                 ws.Rows(outRow).Font.Bold = True
 
                 If groupStartRow > 0 Then
@@ -351,7 +370,7 @@ NextRow:
                 accF = accF + sumF
                 accH = accH + sumH
                 acci = acci + sumI
-                accK = accK + sumK
+'                accK = accK + sumK
 
                 outRow = outRow + 1
                 sumF = 0#: sumH = 0#: sumI = 0#: sumK = 0#
@@ -360,31 +379,33 @@ NextRow:
 
             ' Основний рядок
             ws.Rows(outRow).Insert Shift:=xlDown
-            
+
             If dictAccount.exists(k) Then
-                ws.Cells(outRow, 2).value = dictAccount(k)
+                ws.Cells(outRow, 16).value = dictAccount(k) 'субрахунок
             Else
-                ws.Cells(outRow, 2).value = ""
+                ws.Cells(outRow, 16).value = ""
             End If
-            ws.Cells(outRow, 3).value = currentName
-            ws.Cells(outRow, 4).value = dictCode(k)
-            ws.Cells(outRow, 5).value = dictUom(k)
-            ws.Cells(outRow, 6).value = bal
-            ws.Cells(outRow, 7).value = dictPrice(k)
-            ws.Cells(outRow, 8).FormulaR1C1 = "=RC[-2]*RC[-1]"
+            ws.Cells(outRow, 2).value = currentName 'найменування
+            ws.Cells(outRow, 4).value = dictCode(k) 'код номенклатури
+            ws.Cells(outRow, 5).value = dictSerialNumber(k) 'серійний номер
+            ws.Cells(outRow, 7).value = dictUom(k) 'одиниця виміру
+            ws.Cells(outRow, 8).value = bal 'кількість
+            ws.Cells(outRow, 9).value = dictPrice(k) 'ціна
+            ws.Cells(outRow, 14).FormulaR1C1 = "=RC[-2]-RC[-1]" 'балансова вартість (первісна - знос) *якщо буде знос...
+            ws.Cells(outRow, 17).FormulaR1C1 = "=RC[-5]*RC[-6]" 'сума поки тут
             ws.Rows(outRow).Font.Bold = False
 
             ' Для сумарних колонок дублюємо (за потреби)
-            ws.Cells(outRow, 9).value = ws.Cells(outRow, 6).value
-            ws.Cells(outRow, 10).value = ws.Cells(outRow, 7).value
-            ws.Cells(outRow, 11).value = ws.Cells(outRow, 8).value
+            ws.Cells(outRow, 11).value = ws.Cells(outRow, 8).value 'кількість
+            ws.Cells(outRow, 12).value = ws.Cells(outRow, 9).value 'ціна
+'            ws.Cells(outRow, 11).value = ws.Cells(outRow, 8).value
 
             If groupStartRow = 0 Then groupStartRow = outRow
 
-            sumF = sumF + NzNum(ws.Cells(outRow, 6).value)
-            sumH = sumH + NzNum(ws.Cells(outRow, 8).value)
-            sumI = sumI + NzNum(ws.Cells(outRow, 9).value)
-            sumK = sumK + NzNum(ws.Cells(outRow, 11).value)
+            sumF = sumF + NzNum(ws.Cells(outRow, 8).value)
+            sumH = sumH + NzNum(ws.Cells(outRow, 17).value)
+            sumI = sumI + NzNum(ws.Cells(outRow, 11).value)
+'            sumK = sumK + NzNum(ws.Cells(outRow, 11).value)
 
             prevName = currentName
             prevAccount = currentAccount
@@ -394,14 +415,14 @@ NextRow:
 
     ' Закриваємо останню відкриту групу (якщо є)
     If prevName <> "" Then
-    
+
     ws.Rows(outRow).Insert Shift:=xlDown
-    
-        ws.Cells(outRow, 3).value = "ВСЬОГО " & prevName
-        ws.Cells(outRow, 6).value = sumF
-        ws.Cells(outRow, 8).value = sumH
-        ws.Cells(outRow, 9).value = sumI
-        ws.Cells(outRow, 11).value = sumK
+
+        ws.Cells(outRow, 2).value = "ВСЬОГО " & prevName 'Всього + найменування
+        ws.Cells(outRow, 8).value = sumF
+        ws.Cells(outRow, 17).value = sumH
+        ws.Cells(outRow, 11).value = sumI
+'        ws.Cells(outRow, 11).value = sumK
         ws.Rows(outRow).Font.Bold = True
 
         If groupStartRow > 0 Then
@@ -423,101 +444,91 @@ NextRow:
         accF = accF + sumF
         accH = accH + sumH
         acci = acci + sumI
-        accK = accK + sumK
+'        accK = accK + sumK
 
         outRow = outRow + 1
     End If
 
     ' Якщо залишився незакритий рахунок — виводимо його проміжний підсумок
     If prevAccount <> "" Then
-    
+
     ws.Rows(outRow).Insert Shift:=xlDown
-    
+
         ws.Range("A" & outRow & ":E" & outRow).Merge
         ws.Range("A" & outRow).value = "ВСЬОГО по рахунку " & prevAccount
         ws.Range("A" & outRow).HorizontalAlignment = xlCenter
         ws.Range("A" & outRow).VerticalAlignment = xlCenter
         ws.Range("A" & outRow).Font.Bold = True
 
-        ws.Cells(outRow, 6).value = accF
-        ws.Cells(outRow, 8).value = accH
-        ws.Cells(outRow, 9).value = acci
-        ws.Cells(outRow, 11).value = accK
+        ws.Cells(outRow, 8).value = accF
+        ws.Cells(outRow, 17).value = accH
+        ws.Cells(outRow, 11).value = acci
+'        ws.Cells(outRow, 11).value = accK
         ws.Rows(outRow).Font.Bold = True
 
         grandF = grandF + accF
         grandH = grandH + accH
         grandI = grandI + acci
-        grandK = grandK + accK
+'        grandK = grandK + accK
 
         outRow = outRow + 1
     End If
 
     ' Загальний підсумок по всіх рахунках
     ws.Rows(outRow).Insert Shift:=xlDown
-    
-    ws.Range("A" & outRow & ":E" & outRow).Merge
+
+    ws.Range("A" & outRow & ":G" & outRow).Merge
     ws.Range("A" & outRow).value = "РАЗОМ"
     ws.Range("A" & outRow).HorizontalAlignment = xlCenter
     ws.Range("A" & outRow).VerticalAlignment = xlCenter
     ws.Range("A" & outRow).Font.Bold = True
 
-    ws.Cells(outRow, 6).value = grandF
-    ws.Cells(outRow, 8).value = grandH
-    ws.Cells(outRow, 9).value = grandI
-    ws.Cells(outRow, 11).value = grandK
+    ws.Cells(outRow, 8).value = grandF
+    ws.Cells(outRow, 17).value = grandH
+    ws.Cells(outRow, 11).value = grandI
+'    ws.Cells(outRow, 11).value = grandK
     ws.Rows(outRow).Font.Bold = True
 
     totalRow = outRow
     lastPos = posCounter - 1
 
       ' --- Форматування таблиці: вирівнювання колонок, без AutoFit ---
-    With ws.Range("A24:L" & totalRow)
+    With ws.Range("A25:Q" & totalRow)
         .Borders.LineStyle = xlContinuous
         .Borders.Weight = xlThin
         .Font.name = "Times New Roman"
         .Font.Size = 12
         .VerticalAlignment = xlCenter
     End With
-    
-    ' Колонка B — по центру
-    With ws.Range("B24:B" & totalRow)
-        .NumberFormat = "@"          ' текстовий формат
-        .HorizontalAlignment = xlCenter
-        .VerticalAlignment = xlCenter
-    End With
 
-    
-    ' Колонка C — по лівому краю
-    With ws.Range("C24:C" & totalRow)
+
+
+
+    ' Колонка b — по лівому краю
+    With ws.Range("b25:b" & totalRow)
         .HorizontalAlignment = xlLeft
         .VerticalAlignment = xlCenter
         .WrapText = True
     End With
-    
-    ' Колонка D — по центру
-    With ws.Range("D24:D" & totalRow)
+
+
+    ' Колонки C:L — по центру
+    With ws.Range("E25:Q" & totalRow)
         .HorizontalAlignment = xlCenter
         .VerticalAlignment = xlCenter
     End With
-    
-    ' Колонки E:L — по центру
-    With ws.Range("E24:L" & totalRow)
-        .HorizontalAlignment = xlCenter
-        .VerticalAlignment = xlCenter
-    End With
-     
+
     ' Формати чисел залишаються як раніше
-    ws.Range("G24:G" & totalRow).NumberFormat = "0.00#########################"
-    ws.Range("J24:J" & totalRow).NumberFormat = "0.00#########################"
-    ws.Range("H24:H" & totalRow).NumberFormat = "0.00"
-    ws.Range("K24:K" & totalRow).NumberFormat = "0.00"
+'    ws.Range("G25:G" & totalRow).NumberFormat = "0.00#########################"
+    ws.Range("Q25:Q" & totalRow).NumberFormat = "0.00"
+    ws.Range("H25:H" & totalRow).NumberFormat = "0.00#########################"
+    ws.Range("K25:K" & totalRow).NumberFormat = "0.00#########################"
 
 '    ' --- Блок "Разом за описом" ---
 
 ' а) кількість порядкових номерів:
     ws.Range("invTotalNumbers").value = ЧислоПрописом11(lastPos)
-    
+
     ws.Range("invlastPos").value = lastPos
 
 '  б) загальна кількість одиниць (фактично):
@@ -532,29 +543,29 @@ NextRow:
 
 
 'ґ) вартість за даними бухгалтерського обліку:
-    ws.Range("invActualCostAccaunting").value = LCase(СумаПрописом1(grandK))
+    ws.Range("invActualCostAccaunting").value = LCase(СумаПрописом1(grandH))
 
 
 With ws.PageSetup
     .PaperSize = xlPaperA4
     .Orientation = xlLandscape
-        
+
     .Zoom = False
     .FitToPagesWide = 1
     .FitToPagesTall = False
     'тимчасово
-    .PrintArea = "$A$1:$L$" & ws.Range("invLastRow").Row
-    
+    .PrintArea = "$A$1:$P$" & ws.Range("invLastRow").Row
+
 End With
 
-    MsgBox "Інвентаризаційний опис підрозділу: " & unitFilter, vbInformation, "Інвентаризаційний опис сформовано"
+    MsgBox "Інвентаризаційний опис НА підрозділу: " & unitFilter, vbInformation, "Інвентаризаційний опис НА сформовано"
 End Sub
 
 ' === Допоміжні процедури та функції ===
 
 ' Безпечне накопичення в словниках (тепер з dictAccount)
-Private Sub AccumulateBalance(ByRef dictBal As Object, ByRef dictUom As Object, ByRef dictCode As Object, ByRef dictPrice As Object, ByRef dictAccount As Object, _
-                              ByVal key As String, ByVal deltaQty As Double, ByVal uom As String, ByVal itemCode As String, ByVal price As Double, ByVal account As String)
+Private Sub AccumulateBalance(ByRef dictBal As Object, ByRef dictUom As Object, ByRef dictCode As Object, ByRef dictPrice As Object, ByRef dictAccount As Object, ByRef dictSerialNumber As Object, _
+                              ByVal key As String, ByVal deltaQty As Double, ByVal uom As String, ByVal itemCode As String, ByVal price As Double, ByVal account As String, ByVal SerialNumber As String)
     If Not dictBal.exists(key) Then dictBal.Add key, 0#
     dictBal(key) = dictBal(key) + deltaQty
 
@@ -562,6 +573,8 @@ Private Sub AccumulateBalance(ByRef dictBal As Object, ByRef dictUom As Object, 
     If Not dictCode.exists(key) Then dictCode.Add key, itemCode
     If Not dictPrice.exists(key) Then dictPrice.Add key, price
     If Not dictAccount.exists(key) Then dictAccount.Add key, account
+    If Not dictSerialNumber.exists(key) Then dictSerialNumber.Add key, SerialNumber
+
 End Sub
 
 ' Повертає найменування з ключа itemName|price
@@ -620,76 +633,76 @@ Private Sub FillInventorySubaccounts(ByVal dictAccount As Object)
     Dim tbAccounts As ListObject
     Dim dictNames As Object
     Dim dictUsed As Object
-    
+
     Dim cell As Range
     Dim account As Variant
     Dim accountName As String
     Dim result As String
-    
+
     Set wsDict = ThisWorkbook.Worksheets("Довідники")
     Set tbAccounts = wsDict.ListObjects("tbAccaunts")
-    
+
     Set dictNames = CreateObject("Scripting.Dictionary")
     Set dictUsed = CreateObject("Scripting.Dictionary")
-    
+
     dictNames.CompareMode = vbTextCompare
     dictUsed.CompareMode = vbTextCompare
-    
+
     ' Завантажуємо довідник субрахунків
     If Not tbAccounts.DataBodyRange Is Nothing Then
-        
+
         For Each cell In tbAccounts.ListColumns(1).DataBodyRange
-            
+
             account = Trim$(CStr(cell.value))
-            
+
             If account <> "" Then
                 accountName = Trim$(CStr(cell.Offset(0, 1).value))
-                
+
                 If Not dictNames.exists(account) Then
                     dictNames.Add account, accountName
                 End If
             End If
-            
+
         Next cell
-        
+
     End If
-    
+
     ' Визначаємо унікальні задіяні субрахунки
     For Each account In dictAccount.items
-        
+
         account = Trim$(CStr(account))
-        
+
         If account <> "" Then
-            
+
             If Not dictUsed.exists(account) Then
                 dictUsed.Add account, True
             End If
-            
+
         End If
-        
+
     Next account
-    
+
     ' Формуємо текст
     For Each account In dictUsed.Keys
-        
+
         If result <> "" Then result = result & ", "
-        
+
         result = result & account
-        
+
         If dictNames.exists(account) Then
             accountName = dictNames(account)
-            
+
             If accountName <> "" Then
                 result = result & " " & accountName
             End If
         Else
             result = result & " *****не знайдено в довіднику*****"
         End If
-        
+
     Next account
-    
+
     ' Запис у поле
-    ThisWorkbook.Worksheets("Інвентаризаційний опис") _
+    ThisWorkbook.Worksheets("Інвентаризаційний опис НА") _
         .Range("invSubs").value = result
 
 End Sub
@@ -698,21 +711,10 @@ End Sub
 
 
 
+Sub SaveInventoryNCA()
 
-
-
-
-
-' === Примітка ===
-' Функції NumberToWordsUA та NumberToWordsUA_Grn викликаються у блоці "Разом за описом".
-' Якщо їх немає в проекті, додайте реалізації або замініть виклики на інші.
-' При потребі я можу додати реалізації перетворення чисел у слова українською.
-
-' === 3.9.27 ===
-Sub SaveInventory()
-
-        ThisWorkbook.Sheets("Інвентаризаційний опис").Select 'копіюємо перший лист з нарядом
-        ThisWorkbook.Sheets("Інвентаризаційний опис").Copy 'зберігаємо як нову книгу
+        ThisWorkbook.Sheets("Інвентаризаційний опис НА").Select 'копіюємо перший лист з нарядом
+        ThisWorkbook.Sheets("Інвентаризаційний опис НА").Copy 'зберігаємо як нову книгу
    
      Dim WbNew As Workbook
      Dim cell
@@ -723,26 +725,31 @@ Sub SaveInventory()
         shp.Delete
     Next shp
     
-    For Each cell In WbNew.Worksheets(1).Range(Cells(1, 1), Cells(WbNew.Worksheets(1).Range("invLastRow").Row, 17))
-        If cell.HasFormula Then
-            cell.value = cell.value
-        End If
-    Next cell
+    Dim wsNew As Worksheet
+    Set wsNew = WbNew.Worksheets(1)
     
+    Dim lastR As Long
+    lastR = wsNew.Range("invLastRow").Row
     
-        'зберігаємо файл
-'        On Error GoTo WrongPath
-         WbNew.SaveAs fileName:=ThisWorkbook.Path & Application.PathSeparator & _
-         CleanFileName("Інвентаризаційний опис запасів " & WbNew.Worksheets(1).Range("invAsOf").value & " " & _
-          WbNew.Worksheets(1).Range("invUnit").value & ".xlsx"), FileFormat:=xlOpenXMLWorkbook
-'     On Error GoTo 0
-'      Exit Sub
-'WrongPath:
-     MsgBox "Інвентаризаційний опис збережений і тій же папці, де файл бази даних", vbInformation, ThisWorkbook.Path
-'     Exit Sub
+    With wsNew
+        .Range(.Cells(1, 1), .Cells(lastR, 17)).value = .Range(.Cells(1, 1), .Cells(lastR, 17)).value
+    End With
+    
+    ' Зберігаємо файл без попереджень про сумісність
+    Application.DisplayAlerts = False
+    WbNew.SaveAs fileName:=ThisWorkbook.Path & Application.PathSeparator & _
+        CleanFileName("Інвентаризаційний опис НА " & wsNew.Range("invAsOf").value & " " & _
+        wsNew.Range("invUnit").value & ".xlsx"), FileFormat:=xlOpenXMLWorkbook
+    Application.DisplayAlerts = True
+    
+    MsgBox "Інвентаризаційний опис збережений у тій же папці, де файл бази даних", vbInformation, "Збережено успішно"
      
 End Sub
 
 
-' === 3.9.27 ===
+' === Примітка ===
+' Функції NumberToWordsUA та NumberToWordsUA_Grn викликаються у блоці "Разом за описом".
+' Якщо їх немає в проекті, додайте реалізації або замініть виклики на інші.
+' При потребі я можу додати реалізації перетворення чисел у слова українською.
+
 

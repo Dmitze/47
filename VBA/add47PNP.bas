@@ -1,509 +1,557 @@
 Attribute VB_Name = "add47PNP"
+
+Option Explicit
+
 Sub CreateAdd47PNP()
-'для категорій придатне/непридатне/потребує ремонту
-Dim wbAllData As Workbook
-Dim wsAllData As Worksheet
-Dim tbAllData As ListObject
+    ' Для категорій придатне / непридатне / потребує ремонту
+    Dim wbAllData As Workbook
+    Dim wsAllData As Worksheet
+    Dim tbAllData As ListObject
+    Dim wsAdd47 As Worksheet
+    
     Set wbAllData = ThisWorkbook
     Set wsAllData = wbAllData.Worksheets("База")
     Set tbAllData = wsAllData.ListObjects("AllData")
-    
-Dim wsAdd47 As Worksheet
     Set wsAdd47 = wbAllData.Worksheets("Додаток 47 пр-непр")
     
+    Dim ptReduses As PivotTable
+    On Error Resume Next
+    Set ptReduses = ThisWorkbook.Worksheets("Довідник д47").PivotTables("ptReduses47")
+    If Not ptReduses Is Nothing Then ptReduses.RefreshTable
+    On Error GoTo 0
+
+    ' Видаляємо попередні динамічні дані (колонки від P/16 і рядки від 21)
+    Dim lastColumnStart As Long
+    lastColumnStart = wsAdd47.Cells(19, wsAdd47.Columns.count).End(xlToLeft).Column
+    If lastColumnStart < 16 Then lastColumnStart = 16
     
-Dim RngToSearchData As Range
-Set RngToSearchData = wsAdd47.Range("16:16")
-
-Dim ptReduses As PivotTable     'таблиця з переліком МЦ
-'оновити таблицю, перед вибором МЦ
-Set ptReduses = ThisWorkbook.Worksheets("Довідник д47").PivotTables("ptReduses47")
-ptReduses.RefreshTable
-
-'Видаляємо попередні дані
-Dim lastColumnStart As Long
- lastColumnStart = wsAdd47.Cells(19, wsAdd47.Columns.count).End(xlToLeft).Column + 1
-Dim LastRowStart As Long
- LastRowStart = wsAdd47.Cells.Find(What:="*", After:=wsAdd47.Cells(1, 1), LookIn:=xlFormulas, LookAt:=xlPart, _
+    Dim LastRowStart As Long
+    LastRowStart = wsAdd47.Cells.Find(What:="*", After:=wsAdd47.Cells(1, 1), LookIn:=xlFormulas, LookAt:=xlPart, _
                             SearchOrder:=xlByRows, SearchDirection:=xlPrevious).Row
-On Error Resume Next
-    wsAdd47.Range(Cells(1, 16), Cells(LastRowStart, lastColumnStart)).EntireColumn.Delete ' Видалити колонки від до останньої
+    If LastRowStart < 21 Then LastRowStart = 21
 
-    wsAdd47.Rows("21:" & wsAdd47.Rows.count).Delete
+    On Error Resume Next
+    If lastColumnStart >= 16 Then
+        wsAdd47.Range(wsAdd47.Cells(1, 16), wsAdd47.Cells(LastRowStart, lastColumnStart)).EntireColumn.Delete
+    End If
+    If LastRowStart >= 21 Then
+        wsAdd47.Rows("21:" & wsAdd47.Rows.count).Delete
+    End If
+    On Error GoTo 0
 
-On Error GoTo 0
+    ' Викликаємо форму для вибору майна
+    Dim frm As UserForm1
+    Set frm = UserForms.Add(UserForm1.name)
+    frm.ListData = ThisWorkbook.Worksheets("Довідник д47").Range("Goods47")
+    frm.show
     
-Dim filteredData() As Variant 'масив з відфільтрованими даними
-
-'викликаємо форму для вибору майна
-     Dim frm     As UserForm1
-        Set frm = UserForms.Add(UserForm1.name)
-        frm.ListData = ThisWorkbook.Worksheets("Довідник д47").Range("Goods47")
-        
-        frm.show
-        
-        NameOfThings = frm.TextBox1.value
-        
-        Dim rngWithName As Range
-        
-        Dim ListGoods As Range
-        Set ListGoods = ThisWorkbook.Worksheets("Довідник д47").Range("Goods47")
-        'Шукаємо задане значення в діапазоні
-        Set rngWithName = ListGoods.Find(NameOfThings, LookIn:=xlValues, LookAt:=xlWhole)
-        
-        'Перевіряємо, чи знайдено задане значення
-        If Not rngWithName Is Nothing Then
-            Dim name As String
-            Dim Nomenclature As String
-            Dim unit As String
-            Dim Pice As Double
-            
-            
-            'Визначаємо значення за замовчуванням
-            name = rngWithName.Offset(, -12).value
-            
-'            Nomenclature = rngWithName.Offset(, -10).value
-'
-'            Unit = rngWithName.Offset(, -11).value
-'
-'            Pice = rngWithName.Offset(, -9).value
-            
-'             On Error GoTo WrongNomenclature
-            Nomenclature = rngWithName.Offset(, -10).value
-            If Nomenclature = "(пусто)" Then
-            MsgBox "Ймовірно, ви не вказали код номенклатури вибраного майна, вкажіть код номенклатури (якщо не відомо, поставте б/н) і спробуйте створити додаток ще раз!", vbCritical, "Код номенклатури не вказаний"
-            Exit Sub
-            End If
-'            On Error GoTo 0
-            
-'            On Error GoTo WrongUnit
-            unit = rngWithName.Offset(, -11).value
-            If unit = "(пусто)" Then
-            MsgBox "Ймовірно, ви не вказали одиницю виміру вибраного майна, вкажіть одиницю виміру і спробуйте створити додаток ще раз!", vbCritical, "Одиниця виміру не вказана"
-            Exit Sub
-            End If
-'            On Error GoTo 0
-            
-            On Error GoTo WrongPrice
-            Pice = rngWithName.Offset(, -9).value
-            On Error GoTo 0
-            
-            
-           'заповнюємо критерії, по яких будемо фільтрувати базу даних для витяжки потрібного майна
-            Dim criteriaRange47 As Range
-            
-            Set criteriaRange47 = wsAdd47.Range("criteriaRange47PNP")
-            
-            With criteriaRange47
-                .Cells(2, 1) = "'=" & name 'найменуванян
-                .Cells(2, 2) = "'=" & unit 'одиниця виміру
-                .Cells(2, 3) = "'=" & Nomenclature    'код номенклатури
-                .Cells(2, 4) = Pice  'ціна
-            End With
-            
-            'знімаємо фільтри,якщо були поставлені
-            If wsAllData.FilterMode Then
-                wsAllData.ShowAllData
-            End If
-            
-            'фільтруємо по заданих критеріях
-            tbAllData.Range.AdvancedFilter Action:=xlFilterInPlace, criteriaRange:=criteriaRange47, Unique:=False
-            
-Dim rowCount As Long, colCount As Long
-Dim visibleRange As Range
-Dim cell As Range
-Dim area As Range
-
- ' Визначаємо кількість видимих рядків і стовпців
-    rowCount = 0
-    colCount = tbAllData.ListColumns.count
+    Dim NameOfThings As String
+    NameOfThings = frm.TextBox1.value
+    If Len(Trim$(NameOfThings)) = 0 Then Exit Sub
+    
+    Dim ListGoods As Range
+    Dim rngWithName As Range
+    Set ListGoods = ThisWorkbook.Worksheets("Довідник д47").Range("Goods47")
+    Set rngWithName = ListGoods.Find(NameOfThings, LookIn:=xlValues, LookAt:=xlWhole)
+    
+    If rngWithName Is Nothing Then
+        MsgBox "Майно не знайдено в довіднику. Спробуйте ще раз!", vbCritical, "Помилка вибору"
+        Exit Sub
+    End If
+    
+    Dim name As String
+    Dim Nomenclature As String
+    Dim unit As String
+    Dim Pice As Double
+    
+    name = rngWithName.Offset(, -12).value
+    Nomenclature = rngWithName.Offset(, -10).value
+    If Nomenclature = "(пусто)" Or Len(Trim$(Nomenclature)) = 0 Then
+        MsgBox "Ймовірно, ви не вказали код номенклатури вибраного майна (якщо не відомо, поставте б/н)!", vbCritical, "Код номенклатури не вказаний"
+        Exit Sub
+    End If
+    
+    unit = rngWithName.Offset(, -11).value
+    If unit = "(пусто)" Or Len(Trim$(unit)) = 0 Then
+        MsgBox "Ймовірно, ви не вказали одиницю виміру вибраного майна!", vbCritical, "Одиниця виміру не вказана"
+        Exit Sub
+    End If
+    
+    On Error GoTo WrongPrice
+    Pice = CDbl(rngWithName.Offset(, -9).value)
+    On Error GoTo 0
+    
+    ' Заповнюємо критерії фільтрації
+    Dim criteriaRange47 As Range
+    Set criteriaRange47 = wsAdd47.Range("criteriaRange47")
+    With criteriaRange47
+        .Cells(2, 1) = "'=" & name
+        .Cells(2, 2) = "'=" & unit
+        .Cells(2, 3) = "'=" & Nomenclature
+        .Cells(2, 4) = Pice
+    End With
+    
+    If wsAllData.FilterMode Then wsAllData.ShowAllData
+    
+    ' Фільтруємо базу
+    tbAllData.Range.AdvancedFilter Action:=xlFilterInPlace, criteriaRange:=criteriaRange47, Unique:=False
+    
+    Dim visibleRange As Range
     On Error Resume Next
     Set visibleRange = tbAllData.DataBodyRange.SpecialCells(xlCellTypeVisible)
     On Error GoTo 0
     
-    If Not visibleRange Is Nothing Then
-        For Each area In visibleRange.Areas
-            rowCount = rowCount + area.Rows.count
-        Next area
-        
-        ' Ініціалізуємо масив з урахуванням заголовків
-        ReDim filteredData(1 To rowCount + 1, 1 To colCount)
-        
-        ' Записуємо заголовки таблиці у масив
-        For k = 1 To colCount
-            filteredData(1, k) = tbAllData.HeaderRowRange.Cells(1, k).value
-        Next k
-        
-        ' Записуємо відфільтровані дані у масив
-        i = 2
-        For Each area In visibleRange.Areas
-            For Each cell In area.Rows
-                For j = 1 To colCount
-                    filteredData(i, j) = cell.Cells(1, j).value
-                Next j
-                i = i + 1
-            Next cell
-        Next area
-            
-  End If
-        
-End If
-Dim lastRow47 As Long
-Dim CopyRange1 As Range
-Dim foundCell As Range
-
-Dim n As Long
-    On Error GoTo DontSelect
-    For n = LBound(filteredData) + 1 To UBound(filteredData)
-    On Error GoTo 0
-    lastRow47 = Cells(wsAdd47.Rows.count, "A").End(xlUp).Row + 1
-    Dim LastColumn As Long
-    LastColumn = wsAdd47.Cells.Find(What:="*", After:=wsAdd47.Cells(1, 1), LookIn:=xlFormulas, LookAt:=xlPart, SearchOrder:=xlByColumns, SearchDirection:=xlPrevious).Column
+    If visibleRange Is Nothing Then
+        If wsAllData.FilterMode Then wsAllData.ShowAllData
+        MsgBox "Записів по вибраному майну в базі не знайдено!", vbInformation, "Немає даних"
+        Exit Sub
+    End If
     
-    'скопіювати останій рядок і вставити
-    wsAdd47.Range(wsAdd47.Cells(lastRow47 - 1, 12), wsAdd47.Cells(lastRow47 - 1, LastColumn)).Copy
-    wsAdd47.Range(wsAdd47.Cells(lastRow47, 12), wsAdd47.Cells(lastRow47, LastColumn)).PasteSpecial xlPasteAll
-'    wsAdd47.Cells(lastRow47, LastColumn)
+    Dim rowCount As Long, colCount As Long, area As Range, cell As Range
+    rowCount = 0
+    colCount = tbAllData.ListColumns.count
+    For Each area In visibleRange.Areas
+        rowCount = rowCount + area.Rows.count
+    Next area
     
-    Dim CategoryFrom As String
-    Dim CategoryTo As String
-    Dim categoryCol As Long
-    categoryCol = 0
+    If rowCount = 0 Then
+        If wsAllData.FilterMode Then wsAllData.ShowAllData
+        MsgBox "Записів по вибраному майну в базі не знайдено!", vbInformation, "Немає даних"
+        Exit Sub
+    End If
     
-    CategoryFrom = filteredData(n, 5)
-    CategoryTo = filteredData(n, 27)
- 
+    Dim filteredData() As Variant
+    ReDim filteredData(1 To rowCount + 1, 1 To colCount)
     
-           Dim typeOperation As String
-           typeOperation = filteredData(n, 26)
-           
-            Dim quantity As Double
-            Dim FromUnit As String
-            Dim toUnit As String
-            Dim fromUnitExist As Boolean
-            Dim toUnitExist As Boolean
-            
-            Dim previousQuantyty As Double
-            Dim actualQuantyty As Double
-            
-            Set CopyRange1 = wsAdd47.Range(wsAdd47.Cells(16, 12), wsAdd47.Cells(20, 15))
-            
-            Select Case typeOperation
-    '*********************************************************************************************************
-               Case "надходження"
-                        quantity = filteredData(n, 6) 'кількість
-                        toUnit = filteredData(n, 9) 'куди (підрозділ)
-                        wsAdd47.Cells(lastRow47, 6).value = quantity
-                        toUnitExist = FindValue(toUnit, RngToSearchData)
-                        
-                    If Not toUnitExist Then
-'                        MsgBox "Працюємо"
-                        wsAdd47.Activate
-
-                        'копіюємо стовпчики
-                       
-                            CopyRange1.Copy
-                            
-                             wsAdd47.Cells(16, LastColumn + 1).PasteSpecial xlPasteAll
-                            
-                             wsAdd47.Cells(16, LastColumn + 1) = toUnit
-                             
-                    'якщо тут помилка - в базі не правильно вказана категорія:
-                    'повинно бути пр. або не пр. або пот. рем.
-                    'переконайтеся що у вас правильно проставлені категорії відправника або одержувача
-                    categoryCol = wsAdd47.Cells.Find(What:=CategoryTo, After:=wsAdd47.Cells(18, LastColumn), LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext).Column
-                    
-                    previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).value
-'                    previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).End(xlUp).value 'визначаємо попередню кількість, за відповідною категорією.
-                    actualQuantyty = previousQuantyty + quantity 'додаємо до попередньої кількості
-                    'вставляємо в поточний рядок
-                    wsAdd47.Cells(lastRow47, categoryCol).value = actualQuantyty
-                   
-                         Else
-                        
-
-                            'Шукаємо задане значення в діапазоні
-                            Set foundCell = RngToSearchData.Find(toUnit, LookIn:=xlValues, LookAt:=xlWhole)
-                        
-                            'Перевіряємо, чи знайдено задане значення
-                            If Not foundCell Is Nothing Then
-                    
-                                'якщо тут помилка - в базі не правильно вказана категорія:
-                                'повинно бути пр. або не пр. або пот. рем.
-                                'переконайтеся що у вас правильно проставлені категорії відправника або одержувача
-                                categoryCol = wsAdd47.Cells.Find(What:=CategoryTo, After:=wsAdd47.Cells(18, foundCell.Column), LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext).Column
-                                previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).value
-'                                previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).End(xlUp).value 'визначаємо попередню кількість, за відповідною категорією.
-                                actualQuantyty = previousQuantyty + quantity 'додаємо до попередньої кількості
-                                'вставляємо в поточний рядок
-                                wsAdd47.Cells(lastRow47, categoryCol).value = actualQuantyty
-                               
-                            Else
-'                                FindValue = False
-                            End If
- 
-                    End If
-'******************************************************************************************************************************
-                        
-               Case "вибуття"
-                        quantity = filteredData(n, 7)
-                        wsAdd47.Cells(lastRow47, 7).value = quantity
-                        FromUnit = filteredData(n, 8)
-                        fromUnitExist = FindValue(FromUnit, RngToSearchData)
-                        
-                        
-                    If Not fromUnitExist Then
-'                        MsgBox "Працюємо"
-                        wsAdd47.Activate
- 
-                    
-                            CopyRange1.Copy
-                            wsAdd47.Cells(16, LastColumn + 1).PasteSpecial xlPasteAll
-                            
-                             wsAdd47.Cells(16, LastColumn + 1) = FromUnit
-                    'якщо тут помилка - в базі не правильно вказана категорія:
-                    'повинно бути пр. або не пр. або пот. рем.
-                    'переконайтеся що у вас правильно проставлені категорії відправника або одержувача
-                    categoryCol = wsAdd47.Cells.Find(What:=CategoryFrom, After:=wsAdd47.Cells(18, LastColumn), LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext).Column
-                    previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).value
-'                    previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).End(xlUp).value  'визначаємо попередню кількість, за відповідною категорією.
-                    actualQuantyty = previousQuantyty - quantity 'віднімаємо до попередньої кількості
-                    'вставляємо в поточний рядок
-                    wsAdd47.Cells(lastRow47, categoryCol).value = actualQuantyty
-
-
-                         Else
-
-                            'Шукаємо задане значення в діапазоні, якщо вже є підрозділ
-                            Set foundCell = RngToSearchData.Find(FromUnit, LookIn:=xlValues, LookAt:=xlWhole)
-                        
-                            'Перевіряємо, чи знайдено задане значення
-                            If Not foundCell Is Nothing Then
-                                'якщо тут помилка - в базі не правильно вказана категорія:
-                                'повинно бути пр. або не пр. або пот. рем.
-                                'переконайтеся що у вас правильно проставлені категорії відправника або одержувача
-                                categoryCol = wsAdd47.Cells.Find(What:=CategoryFrom, After:=wsAdd47.Cells(18, foundCell.Column), LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext).Column
-                                previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).value
-'                                previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).End(xlUp).value  'визначаємо попередню кількість, за відповідною категорією.
-                                actualQuantyty = previousQuantyty - quantity 'віднімаємо від попередньої кількості
-                                
-                                'вставляємо в поточний рядок кількість
-                                wsAdd47.Cells(lastRow47, categoryCol).value = actualQuantyty
-                               
-                            Else
-'                                FindValue = False
-                            End If
-                    End If
-                    
-                  
-                        '***************************************************************************************************************
-     
-               Case "внутрішнє переміщення"
-                        quantity = filteredData(n, 7)
-                        toUnit = filteredData(n, 9)
-                        FromUnit = filteredData(n, 8)
-                        
-                        fromUnitExist = FindValue(FromUnit, RngToSearchData)
-                        toUnitExist = FindValue(toUnit, RngToSearchData)
-                        
-                    'для підрозділу, з якого вибуває
-                        If Not fromUnitExist Then
-'                        MsgBox "Працюємо"
-                        wsAdd47.Activate
-                        
-
-  
-                        
-                            CopyRange1.Copy
-                            wsAdd47.Cells(16, LastColumn + 1).PasteSpecial xlPasteAll
-                            
-                             wsAdd47.Cells(16, LastColumn + 1) = FromUnit
-                    'якщо тут помилка - в базі не правильно вказана категорія:
-                    'повинно бути пр. або не пр. або пот. рем.
-                    'переконайтеся що у вас правильно проставлені категорії відправника або одержувача
-                    categoryCol = wsAdd47.Cells.Find(What:=CategoryFrom, After:=wsAdd47.Cells(18, LastColumn), LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext).Column
-                    previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).value
-'                    previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).End(xlUp).value  'визначаємо попередню кількість, за відповідною категорією.
-                    actualQuantyty = previousQuantyty - quantity 'віднімаємо до попередньої кількості
-                    'вставляємо в поточний рядок
-                    wsAdd47.Cells(lastRow47, categoryCol).value = actualQuantyty
-                    
-
-                         Else
-                         
-'                        Dim foundCell As Range
-
-                            'Шукаємо задане значення в діапазоні
-                            Set foundCell = RngToSearchData.Find(FromUnit, LookIn:=xlValues, LookAt:=xlWhole)
-                        
-                            'Перевіряємо, чи знайдено задане значення
-                            If Not foundCell Is Nothing Then
-                                'якщо тут помилка - в базі не правильно вказана категорія:
-                                'повинно бути пр. або не пр. або пот. рем.
-                                'переконайтеся що у вас правильно проставлені категорії відправника або одержувача
-                                categoryCol = wsAdd47.Cells.Find(What:=CategoryFrom, After:=wsAdd47.Cells(18, foundCell.Column), LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext).Column
-                                previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).value
-'                                previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).End(xlUp).value  'визначаємо попередню кількість, за відповідною категорією.
-                                actualQuantyty = previousQuantyty - quantity 'додаємо до попередньої кількості
-                                'вставляємо в поточний рядок
-                                wsAdd47.Cells(lastRow47, categoryCol).value = actualQuantyty
-                               
-                            Else
-'                                FindValue = False
-                            End If
-                        
-                    End If
-                    
-                    
-                       If Not toUnitExist Then
-'                        MsgBox "Працюємо"
-                        wsAdd47.Activate
-                        
-                        
-                        Dim addCol As Long
-                        addCol = 0
-                        
-                        If Not fromUnitExist Then
-                        
-                        addCol = 4
-                        End If
- 
-                            CopyRange1.Copy
-                            wsAdd47.Cells(16, LastColumn + addCol + 1).PasteSpecial xlPasteAll
-                            
-                             wsAdd47.Cells(16, LastColumn + addCol + 1) = toUnit
-                     'якщо тут помилка - в базі не правильно вказана категорія:
-                    'повинно бути пр. або не пр. або пот. рем.
-                    'переконайтеся що у вас правильно проставлені категорії відправника або одержувача
-                    categoryCol = wsAdd47.Cells.Find(What:=CategoryTo, After:=wsAdd47.Cells(18, LastColumn + addCol - 1), LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext).Column
-                    '****** ще треба скопіювати весь попередній рядок...., щоб можна було віднімати (додавати) поточну кількість до попередньої
-                    previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).value
-'                    previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).End(xlUp).value  'визначаємо попередню кількість, за відповідною категорією.
-                    actualQuantyty = previousQuantyty + quantity 'додаємо до попередньої кількості
-                    'вставляємо в поточний рядок
-                    wsAdd47.Cells(lastRow47, categoryCol).value = actualQuantyty
-                   
-                         Else
-'                        Dim foundCell As Range
-
-                            'Шукаємо задане значення в діапазоні
-                            Set foundCell = RngToSearchData.Find(toUnit, LookIn:=xlValues, LookAt:=xlWhole)
-                        
-                            'Перевіряємо, чи знайдено задане значення
-                            If Not foundCell Is Nothing Then
-                                'якщо тут помилка - в базі не правильно вказана категорія:
-                                'повинно бути пр. або не пр. або пот. рем.
-                                'переконайтеся що у вас правильно проставлені категорії відправника або одержувача
-                                categoryCol = wsAdd47.Cells.Find(What:=CategoryTo, After:=wsAdd47.Cells(18, foundCell.Column), LookIn:=xlValues, LookAt:=xlWhole, SearchOrder:=xlByColumns, SearchDirection:=xlNext).Column
-                                previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).value
-'                                previousQuantyty = wsAdd47.Cells(lastRow47, categoryCol).End(xlUp).value  'визначаємо попередню кількість, за відповідною категорією.
-                                actualQuantyty = previousQuantyty + quantity 'додаємо до попередньої кількості
-                                'вставляємо в поточний рядок
-                                wsAdd47.Cells(lastRow47, categoryCol).value = actualQuantyty
-                               
-                            Else
-'                                FindValue = False
-                            End If
+    Dim k As Long, i As Long, j As Long
+    For k = 1 To colCount
+        filteredData(1, k) = tbAllData.HeaderRowRange.Cells(1, k).value
+    Next k
     
-                    End If
-'
-'
-            End Select
-            
-            With wsAdd47
-                .Cells(lastRow47, 1).value = filteredData(n, 1) 'дата внесення
-                .Cells(lastRow47, 2).value = filteredData(n, 25) 'найменування документа
-                .Cells(lastRow47, 3).NumberFormat = "@"
-                .Cells(lastRow47, 3).value = filteredData(n, 14) 'номер документа
-                .Cells(lastRow47, 4).value = filteredData(n, 13)  'дата документа
-                .Cells(lastRow47, 5).value = filteredData(n, 8) & Chr(10) & "(" & filteredData(n, 9) & ")"  'підрозділ звідки (підрозділ куди)
-        
-            End With
- 
-         'копіюємо стилі загальної іформації
-        wsAdd47.Range(Cells(20, 1), Cells(20, 19)).Copy
-        wsAdd47.Range(Cells(lastRow47, 1), Cells(lastRow47, 19)).PasteSpecial Paste:=xlPasteFormats
-     
-     
-     Set foundCell = Nothing
-        
-        Call ProgressBar.Progress(n / UBound(filteredData) * 100)
+    i = 2
+    For Each area In visibleRange.Areas
+        For Each cell In area.Rows
+            For j = 1 To colCount
+                filteredData(i, j) = CStr(cell.Cells(1, j).value)
+            Next j
+            i = i + 1
+        Next cell
+    Next area
     
-    Next n
+    If wsAllData.FilterMode Then wsAllData.ShowAllData
     
-    'знаходимо останню колонку після всіх маніпуляцій
-     Dim LastColumnFinal As Long
-     LastColumnFinal = wsAdd47.Cells.Find(What:="*", After:=wsAdd47.Cells(1, 1), LookIn:=xlFormulas, LookAt:=xlPart, SearchOrder:=xlByColumns, SearchDirection:=xlPrevious).Column
-     'копіюємо стилі основної інформації (для показників підрозділів)
-       wsAdd47.Range(Cells(20, 12), Cells(20, 15)).Copy
-       wsAdd47.Range(Cells(21, 12), Cells(lastRow47, LastColumnFinal)).PasteSpecial Paste:=xlPasteFormats
- 
-       'проставляємо суму
-       Dim cellAll As Range
-       Dim cellWithSum As Range
-       For Each cellAll In wsAdd47.Rows(17).Cells 'рядок з усього
-        If cellAll.value = "Усього" Then
-            Set cellWithSum = cellAll.Offset(2, 0)
-            cellWithSum.AutoFill destination:=wsAdd47.Range(wsAdd47.Cells(cellWithSum.Row, cellWithSum.Column), wsAdd47.Cells(lastRow47, cellWithSum.Column))
+    ' Сортуємо хронологічно: спочатку за датою (роком), потім за номером документа
+    SortFilteredData filteredData
+    
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    
+    Dim lastRow47 As Long
+    Dim lastColFinal As Long
+    lastRow47 = 20
+    lastColFinal = 15 ' Колонки 12-15 - це 'Склад'
+    
+    For j = 8 To 15
+        If j = 8 Or (j >= 12 And j <= 15) Then
+            wsAdd47.Cells(20, j).value = 0
         End If
-    Next cellAll
-    
-  
-    
-'   'формула по категоріях
-'    For j = 9 To 11
-'       For i = 21 To lastRow47
-'           wsAdd47.Range(Cells(i, j), Cells(lastRow47, j)).Formula = "=SUMIFS(" & wsAdd47.Range(Cells(i, 12), Cells(i, LastColumnFinal)).Address & "," & wsAdd47.Range(Cells(18, 12), Cells(18, LastColumnFinal)).Address & "," & wsAdd47.Cells(18, j).Address & ")"
-'
-'       Next i
-'    Next j
-    
-    Dim result As Double
-    For j = 9 To 11
-        For i = 21 To lastRow47
-            
-            Set sumRange = wsAdd47.Range(wsAdd47.Cells(i, 12), wsAdd47.Cells(i, LastColumnFinal))
-            Set criteriaRange = wsAdd47.Range(wsAdd47.Cells(18, 12), wsAdd47.Cells(18, LastColumnFinal))
-            criteriaValue = wsAdd47.Cells(18, j).value
-        
-'            wsAdd47.Range(Cells(i, j), Cells(lastRow47, j)).Formula = "=SUMIFS(" & wsAdd47.Range(Cells(i, 14), Cells(i, LastColumnFinal)).Address & "," & wsAdd47.Range(Cells(18, 14), Cells(18, LastColumnFinal)).Address & "," & wsAdd47.Cells(18, j).Address & ")"
-        
-        result = Application.WorksheetFunction.SumIfs(sumRange, criteriaRange, criteriaValue)
-        wsAdd47.Cells(i, j).value = result
-        Next i
     Next j
-  
- 'скидаємо область друку
-wsAdd47.PageSetup.PrintArea = ""
-'скидаємо фільтри
-            If wsAllData.FilterMode Then
-            On Error Resume Next
-                wsAllData.ShowAllData
+    
+    Dim n As Long
+    Dim docEntryDate As Variant, docType As String, docNumber As String, docDate As Variant, docParties As String
+    Dim typeOperation As String, FromUnit As String, toUnit As String
+    Dim catFrom As Long, catTo As Long, qty As Double
+    Dim isSameDoc As Boolean
+    Dim uColFrom As Long, uColTo As Long
+    
+    For n = 2 To UBound(filteredData, 1)
+        docEntryDate = filteredData(n, 1)
+        docType = Trim$(CStr(filteredData(n, 25)))
+        docNumber = Trim$(CStr(filteredData(n, 14)))
+        docDate = filteredData(n, 13)
+        FromUnit = Trim$(CStr(filteredData(n, 8)))
+        toUnit = Trim$(CStr(filteredData(n, 9)))
+        If Len(FromUnit) = 0 Then FromUnit = "Склад"
+        If Len(toUnit) = 0 Then toUnit = "Склад"
+        
+        docParties = FromUnit & vbLf & "(" & toUnit & ")"
+        typeOperation = LCase$(Trim$(CStr(filteredData(n, 26))))
+        
+        If typeOperation = "надходження" Then
+            qty = SafeVal(filteredData(n, 6))
+            If qty = 0 Then qty = SafeVal(filteredData(n, 7))
+        Else
+            qty = SafeVal(filteredData(n, 7))
+            If qty = 0 Then qty = SafeVal(filteredData(n, 6))
+        End If
+        
+        If qty > 0 Then
+            catFrom = MapCatPNP(filteredData(n, 5))
+            catTo = MapCatPNP(filteredData(n, 27))
+            If catTo = 0 Then catTo = catFrom
+            If catFrom = 0 Then catFrom = catTo
+            If catTo = 0 Then catTo = 1
+            If catFrom = 0 Then catFrom = 1
+            
+            isSameDoc = False
+            If lastRow47 > 20 Then
+                If CStr(wsAdd47.Cells(lastRow47, 1).value) = CStr(docEntryDate) And _
+                   Trim$(CStr(wsAdd47.Cells(lastRow47, 2).value)) = docType And _
+                   Trim$(CStr(wsAdd47.Cells(lastRow47, 3).value)) = docNumber And _
+                   CStr(wsAdd47.Cells(lastRow47, 4).value) = CStr(docDate) And _
+                   Trim$(CStr(wsAdd47.Cells(lastRow47, 5).value)) = docParties Then
+                    isSameDoc = True
+                End If
             End If
             
-            Exit Sub
-'***помилки****************************************
-DontSelect:
-MsgBox "Ймовірно,майно відсутнє в базі, або Ви не підтвердили вибір майна: вибране майно повинне ""перестрибнути"" з нижнього у верхнє поле вікна вибору майна, спробуйтие сформувати додаток ще раз!", vbCritical, "Майно не знайдено"
-'wsAllData.ShowAllData
-Exit Sub
+            If Not isSameDoc Then
+                lastRow47 = lastRow47 + 1
+                For j = 12 To lastColFinal
+                    wsAdd47.Cells(lastRow47, j).value = wsAdd47.Cells(lastRow47 - 1, j).value
+                Next j
+                
+                wsAdd47.Cells(lastRow47, 1).value = docEntryDate
+                wsAdd47.Cells(lastRow47, 2).value = docType
+                wsAdd47.Cells(lastRow47, 3).NumberFormat = "@"
+                wsAdd47.Cells(lastRow47, 3).value = docNumber
+                wsAdd47.Cells(lastRow47, 4).value = docDate
+                wsAdd47.Cells(lastRow47, 5).value = docParties
+                wsAdd47.Cells(lastRow47, 6).value = 0
+                wsAdd47.Cells(lastRow47, 7).value = 0
+            End If
+            
+            Select Case typeOperation
+                Case "надходження"
+                    wsAdd47.Cells(lastRow47, 6).value = wsAdd47.Cells(lastRow47, 6).value + qty
+                    If Not IsWrittenOffUnit(toUnit) Then
+                        uColTo = GetOrCreateUnitColPNP(wsAdd47, toUnit, lastColFinal, lastRow47)
+                        wsAdd47.Cells(lastRow47, uColTo + catTo).value = wsAdd47.Cells(lastRow47, uColTo + catTo).value + qty
+                    End If
+                    
+                Case "вибуття"
+                    wsAdd47.Cells(lastRow47, 7).value = wsAdd47.Cells(lastRow47, 7).value + qty
+                    uColFrom = GetOrCreateUnitColPNP(wsAdd47, FromUnit, lastColFinal, lastRow47)
+                    DeductFromUnitPNP wsAdd47, lastRow47, uColFrom, catFrom, qty
+                    
+                Case "внутрішнє переміщення"
+                    If IsWrittenOffUnit(toUnit) Then
+                        wsAdd47.Cells(lastRow47, 7).value = wsAdd47.Cells(lastRow47, 7).value + qty
+                        uColFrom = GetOrCreateUnitColPNP(wsAdd47, FromUnit, lastColFinal, lastRow47)
+                        DeductFromUnitPNP wsAdd47, lastRow47, uColFrom, catFrom, qty
+                    Else
+                        uColFrom = GetOrCreateUnitColPNP(wsAdd47, FromUnit, lastColFinal, lastRow47)
+                        DeductFromUnitPNP wsAdd47, lastRow47, uColFrom, catFrom, qty
+                        
+                        uColTo = GetOrCreateUnitColPNP(wsAdd47, toUnit, lastColFinal, lastRow47)
+                        wsAdd47.Cells(lastRow47, uColTo + catTo).value = wsAdd47.Cells(lastRow47, uColTo + catTo).value + qty
+                    End If
+                    
+                Case Else
+                    If IsWrittenOffUnit(toUnit) Then
+                        wsAdd47.Cells(lastRow47, 7).value = wsAdd47.Cells(lastRow47, 7).value + qty
+                        uColFrom = GetOrCreateUnitColPNP(wsAdd47, FromUnit, lastColFinal, lastRow47)
+                        DeductFromUnitPNP wsAdd47, lastRow47, uColFrom, catFrom, qty
+                    Else
+                        wsAdd47.Cells(lastRow47, 6).value = wsAdd47.Cells(lastRow47, 6).value + qty
+                        uColTo = GetOrCreateUnitColPNP(wsAdd47, toUnit, lastColFinal, lastRow47)
+                        wsAdd47.Cells(lastRow47, uColTo + catTo).value = wsAdd47.Cells(lastRow47, uColTo + catTo).value + qty
+                    End If
+            End Select
+        End If
+        
+        On Error Resume Next
+        Call ProgressBar.Progress(n / UBound(filteredData, 1) * 100)
+        On Error GoTo 0
+    Next n
+    
+    Dim r As Long, c As Long, catK As Long, catSum As Double, uSum As Double
+    For r = 21 To lastRow47
+        For c = 12 To lastColFinal Step 4
+            uSum = 0
+            For catK = 1 To 3
+                uSum = uSum + SafeVal(wsAdd47.Cells(r, c + catK).value)
+            Next catK
+            wsAdd47.Cells(r, c).value = uSum
+        Next c
+        
+        For catK = 1 To 3
+            catSum = 0
+            For c = 12 To lastColFinal Step 4
+                catSum = catSum + SafeVal(wsAdd47.Cells(r, c + catK).value)
+            Next c
+            wsAdd47.Cells(r, 8 + catK).value = catSum
+        Next catK
+        
+        wsAdd47.Cells(r, 8).value = wsAdd47.Cells(r, 9).value + wsAdd47.Cells(r, 10).value + wsAdd47.Cells(r, 11).value
+    Next r
+    
+    If lastRow47 >= 21 Then
+        wsAdd47.Range(wsAdd47.Cells(20, 1), wsAdd47.Cells(20, 11)).Copy
+        wsAdd47.Range(wsAdd47.Cells(21, 1), wsAdd47.Cells(lastRow47, 11)).PasteSpecial xlPasteFormats
+        
+        wsAdd47.Range(wsAdd47.Cells(20, 12), wsAdd47.Cells(20, 15)).Copy
+        wsAdd47.Range(wsAdd47.Cells(21, 12), wsAdd47.Cells(lastRow47, lastColFinal)).PasteSpecial xlPasteFormats
+    End If
+    
+    For c = 16 To lastColFinal
+        wsAdd47.Cells(19, c).value = c
+    Next c
+    
+    wsAdd47.PageSetup.PrintArea = ""
+    Application.CutCopyMode = False
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    
+    MsgBox "Додаток 47 (пр-непр) успішно сформовано! Записів: " & (lastRow47 - 20), vbInformation, "Готово"
+    Exit Sub
 
 WrongPrice:
-MsgBox "Ймовірно,ви не вказали ціну вибраного майна, вкажіть ціну (якщо не відома, поставте 1 грн.) і спробуйте створити додаток ще раз!", vbCritical, "Ціна не вказана"
-Exit Sub
-
-
+    Application.ScreenUpdating = True
+    Application.DisplayAlerts = True
+    MsgBox "Ймовірно, ви не вказали ціну вибраного майна (введіть хоча б 1 грн)!", vbCritical, "Ціна не вказана"
 End Sub
 
+Private Function SafeVal(v As Variant) As Double
+    Dim s As String
+    s = Trim$(CStr(v))
+    If Len(s) = 0 Then
+        SafeVal = 0
+        Exit Function
+    End If
+    s = Replace(s, " ", "")
+    s = Replace(s, Chr(160), "")
+    s = Replace(s, ",", ".")
+    If IsNumeric(s) Then
+        SafeVal = val(s)
+    Else
+        SafeVal = 0
+    End If
+End Function
+
+Private Function SafeDate(v As Variant) As Double
+    Dim s As String
+    s = Trim$(CStr(v))
+    If Len(s) = 0 Then
+        SafeDate = 0
+        Exit Function
+    End If
+    If IsNumeric(s) Then
+        SafeDate = val(s)
+    ElseIf IsDate(s) Then
+        SafeDate = CDbl(CDate(s))
+    Else
+        SafeDate = 0
+    End If
+End Function
+
+Private Function MapCatPNP(v As Variant) As Long
+    ' 1 = придатне, 2 = потребує ремонту, 3 = непридатне
+    Dim s As String
+    s = LCase$(Trim$(CStr(v)))
+    If Len(s) = 0 Then
+        MapCatPNP = 1
+        Exit Function
+    End If
+    If InStr(s, "не") > 0 Or s = "5" Then
+        MapCatPNP = 3 ' непридатне
+    ElseIf InStr(s, "рем") > 0 Or s = "3" Or s = "4" Then
+        MapCatPNP = 2 ' потребує ремонту
+    Else
+        MapCatPNP = 1 ' придатне (1 або 2 категорія)
+    End If
+End Function
+
+Private Function IsWrittenOffUnit(ByVal unitName As String) As Boolean
+    Dim u As String
+    u = LCase$(Trim$(unitName))
+    If Len(u) = 0 Then
+        IsWrittenOffUnit = False
+        Exit Function
+    End If
+    If InStr(u, "спис") > 0 Or InStr(u, "знищ") > 0 Or InStr(u, "втрат") > 0 Or InStr(u, "утиліз") > 0 Then
+        IsWrittenOffUnit = True
+    Else
+        IsWrittenOffUnit = False
+    End If
+End Function
+
+Private Function GetOrCreateUnitColPNP(ws As Worksheet, ByVal unitName As String, ByRef lastCol As Long, ByVal currRow As Long) As Long
+    Dim c As Long
+    For c = 12 To lastCol Step 4
+        If Trim$(CStr(ws.Cells(16, c).value)) = Trim$(unitName) Then
+            GetOrCreateUnitColPNP = c
+            Exit Function
+        End If
+    Next c
+    
+    Dim newCol As Long
+    newCol = lastCol + 1
+    
+    ws.Range(ws.Cells(16, 12), ws.Cells(20, 15)).Copy
+    ws.Cells(16, newCol).PasteSpecial xlPasteAll
+    ws.Cells(16, newCol).value = unitName
+    
+    Dim rIdx As Long, k As Long
+    For rIdx = 20 To currRow
+        For k = 0 To 3
+            ws.Cells(rIdx, newCol + k).value = 0
+        Next k
+    Next rIdx
+    
+    If currRow >= 21 Then
+        ws.Range(ws.Cells(20, 12), ws.Cells(20, 15)).Copy
+        ws.Range(ws.Cells(21, newCol), ws.Cells(currRow, newCol + 3)).PasteSpecial xlPasteFormats
+    End If
+    
+    lastCol = newCol + 3
+    GetOrCreateUnitColPNP = newCol
+End Function
+
+Private Sub DeductFromUnitPNP(ws As Worksheet, ByVal r As Long, ByVal uCol As Long, ByVal preferredCat As Long, ByVal qty As Double)
+    Dim currVal As Double
+    If preferredCat >= 1 And preferredCat <= 3 Then
+        currVal = SafeVal(ws.Cells(r, uCol + preferredCat).value)
+        If currVal >= qty Then
+            ws.Cells(r, uCol + preferredCat).value = currVal - qty
+            Exit Sub
+        ElseIf currVal > 0 Then
+            ws.Cells(r, uCol + preferredCat).value = 0
+            qty = qty - currVal
+        End If
+    End If
+    
+    Dim order(1 To 3) As Long
+    order(1) = 1: order(2) = 2: order(3) = 3
+    Dim i As Long, cat As Long
+    For i = 1 To 3
+        cat = order(i)
+        If cat <> preferredCat Then
+            currVal = SafeVal(ws.Cells(r, uCol + cat).value)
+            If currVal >= qty Then
+                ws.Cells(r, uCol + cat).value = currVal - qty
+                Exit Sub
+            ElseIf currVal > 0 Then
+                ws.Cells(r, uCol + cat).value = 0
+                qty = qty - currVal
+            End If
+        End If
+    Next i
+    
+    If preferredCat < 1 Or preferredCat > 3 Then preferredCat = 1
+    ws.Cells(r, uCol + preferredCat).value = SafeVal(ws.Cells(r, uCol + preferredCat).value) - qty
+End Sub
+
+Private Sub SortFilteredData(ByRef arr() As Variant)
+    Dim numRows As Long
+    numRows = UBound(arr, 1) - 1
+    If numRows <= 1 Then Exit Sub
+    
+    Dim idx() As Long
+    ReDim idx(1 To numRows)
+    Dim i As Long
+    For i = 1 To numRows
+        idx(i) = i + 1
+    Next i
+    
+    QuickSortRows arr, idx, 1, numRows
+    
+    Dim numCols As Long
+    numCols = UBound(arr, 2)
+    Dim temp() As Variant
+    ReDim temp(1 To numRows + 1, 1 To numCols)
+    
+    Dim c As Long
+    For c = 1 To numCols
+        temp(1, c) = arr(1, c)
+    Next c
+    
+    For i = 1 To numRows
+        For c = 1 To numCols
+            temp(i + 1, c) = arr(idx(i), c)
+        Next c
+    Next i
+    
+    arr = temp
+End Sub
+
+Private Sub QuickSortRows(ByRef arr() As Variant, ByRef idx() As Long, ByVal first As Long, ByVal last As Long)
+    Dim i As Long, j As Long, pivotIdx As Long, temp As Long
+    i = first
+    j = last
+    pivotIdx = idx((first + last) \ 2)
+    
+    Do While i <= j
+        Do While CompareRows(arr, idx(i), pivotIdx) < 0
+            i = i + 1
+        Loop
+        Do While CompareRows(arr, idx(j), pivotIdx) > 0
+            j = j - 1
+        Loop
+        If i <= j Then
+            temp = idx(i)
+            idx(i) = idx(j)
+            idx(j) = temp
+            i = i + 1
+            j = j - 1
+        End If
+    Loop
+    
+    If first < j Then QuickSortRows arr, idx, first, j
+    If i < last Then QuickSortRows arr, idx, i, last
+End Sub
+
+Private Function CompareRows(ByRef arr() As Variant, ByVal a As Long, ByVal b As Long) As Long
+    Dim dateA As Double, dateB As Double
+    dateA = SafeDate(arr(a, 13))
+    If dateA = 0 Then dateA = SafeDate(arr(a, 1))
+    
+    dateB = SafeDate(arr(b, 13))
+    If dateB = 0 Then dateB = SafeDate(arr(b, 1))
+    
+    If dateA < dateB Then
+        CompareRows = -1
+        Exit Function
+    ElseIf dateA > dateB Then
+        CompareRows = 1
+        Exit Function
+    End If
+    
+    Dim docA As String, docB As String
+    docA = Trim$(CStr(arr(a, 14)))
+    docB = Trim$(CStr(arr(b, 14)))
+    
+    If IsNumeric(docA) And IsNumeric(docB) Then
+        If val(docA) < val(docB) Then
+            CompareRows = -1
+            Exit Function
+        ElseIf val(docA) > val(docB) Then
+            CompareRows = 1
+            Exit Function
+        End If
+    Else
+        Dim comp As Long
+        comp = StrComp(docA, docB, vbTextCompare)
+        If comp <> 0 Then
+            CompareRows = comp
+            Exit Function
+        End If
+    End If
+    
+    If a < b Then
+        CompareRows = -1
+    ElseIf a > b Then
+        CompareRows = 1
+    Else
+        CompareRows = 0
+    End If
+End Function
 
 Sub SaveAdd47PNP()
-
-        ActiveSheet.Select 'копіюємо
-        ActiveSheet.Copy 'зберігаємо як нову книгу
-     
-     Dim WbNewWO As Workbook
-     
-        Set WbNewWO = ActiveWorkbook
+    ActiveSheet.Select
+    ActiveSheet.Copy
+    
+    Dim WbNewWO As Workbook
+    Set WbNewWO = ActiveWorkbook
     
     Dim nameAdd47 As String
     Dim nomenclature47 As String
@@ -511,65 +559,53 @@ Sub SaveAdd47PNP()
     Dim price47 As Double
     Dim formattedPrice As String
     
-    nameAdd47 = WbNewWO.Worksheets(1).Range("nameAdd47PNP")
+    On Error Resume Next
+    nameAdd47 = WbNewWO.Worksheets(1).Range("nameAdd47").value
+    nomenclature47 = WbNewWO.Worksheets(1).Range("nomenclature47").value
+    unit47 = WbNewWO.Worksheets(1).Range("unit47").value
+    price47 = WbNewWO.Worksheets(1).Range("price47").value
+    On Error GoTo 0
     
-    nomenclature47 = WbNewWO.Worksheets(1).Range("nomenclature47PNP")
-    unit47 = WbNewWO.Worksheets(1).Range("unit47PNP")
-    price47 = WbNewWO.Worksheets(1).Range("price47PNP")
-    
-    formattedPrice = Format(price47, "#,##0.00")
+    formattedPrice = Format(price47, "#,##0.0000")
 
     Dim shp As Shape
     For Each shp In WbNewWO.Worksheets(1).Shapes
         shp.Delete
     Next shp
         
-      Dim fileName As String, fileName2 As String, lineBrake As String
-        'Шлях до файла зберігання
-        SavePath = WbNewWO.Worksheets(1).Range("PathToSaveAdd47PNP")
-        Dim DateAdd47 As Date
-        DateAdd47 = Format(Date, "dd.mm.yyyy")
-        
-        
-        
-              On Error Resume Next
-         If Dir(SavePath, vbDirectory) = vbNullString Then
-         On Error GoTo 0
+    Dim fileName As String, SavePath As String
+    SavePath = ThisWorkbook.Sheets("Додаток 47 пр-непр").Range("PathToSaveAdd47").value
+    Dim DateAdd47 As String
+    DateAdd47 = Format(Date, "dd.mm.yyyy")
+    
+    If Len(SavePath) = 0 Or Dir(SavePath, vbDirectory) = vbNullString Then
         With Application.FileDialog(msoFileDialogFolderPicker)
-            .Title = "Виберіть папку для збереження"
+            .Title = "Виберіть папку для збереження Додатка 47 пр-непр"
             .AllowMultiSelect = False
             If .show = -1 Then
                 SavePath = .SelectedItems(1)
-                'Записуємо новий шлях у клітинку
-                ThisWorkbook.Sheets("Додаток 47 пр-непр").Range("PathToSaveAdd47PNP").value = SavePath
+                ThisWorkbook.Sheets("Додаток 47 пр-непр").Range("PathToSaveAdd47").value = SavePath
             Else
                 MsgBox "Збереження скасовано", vbExclamation
-                WbNew.Close SaveChanges:=False
-                Application.DisplayAlerts = True
+                WbNewWO.Close SaveChanges:=False
                 Exit Sub
             End If
         End With
     End If
         
-        
-        
-        
-        'складаємо назву файла
-        fileName = SavePath & Application.PathSeparator & CleanFileName(DateAdd47 & " д47 " & nameAdd47 & " " & nomenclature47 & " " & unit47 & " " & formattedPrice & ".xlsx")
-        'заміняємо перенесення рядка, косі лінії
-'        fileName2 = CleanFileName(fileName)
-        
-        'зберігаємо файл
-        On Error GoTo WrongPath
-         WbNewWO.SaveAs fileName:=fileName, FileFormat:=xlOpenXMLWorkbook
-         On Error GoTo 0
-     Exit Sub
+    fileName = SavePath & Application.PathSeparator & CleanFileName(DateAdd47 & " д47_пр_непр " & nameAdd47 & " " & nomenclature47 & " " & unit47 & " " & formattedPrice & ".xlsx")
+    
+    Application.DisplayAlerts = False
+    On Error GoTo WrongPath
+    WbNewWO.SaveAs fileName:=fileName, FileFormat:=xlOpenXMLWorkbook
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    MsgBox "Файл успішно збережено: " & vbCrLf & fileName, vbInformation, "Збережено"
+    Exit Sub
+
 WrongPath:
-     MsgBox "Ймовірно, не правильно вказана адреса збереження файла, виправте адресу збереження файлу( на зразок ""D:\База обліку майна ЗСУ 2024"" *без косої лінії вкінці) і спробуйтие сформувати додаток ще раз!", vbCritical, "Не правильний шлях збереження"
-     Exit Sub
-     
+    Application.DisplayAlerts = True
+    MsgBox "Помилка адреси збереження файлу. Перевірте шлях збереження!", vbCritical, "Помилка збереження"
 End Sub
-
-
-
+                                                                                                                                                                                                            
 

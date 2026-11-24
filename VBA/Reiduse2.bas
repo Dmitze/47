@@ -16,7 +16,7 @@ Private Function SafeStr(ByVal v As Variant) As String
 End Function
 
 '==============================================================
-' Основна процедура
+' Основна процедура: Залишки по підрозділах 2.0
 '==============================================================
 Sub UpdateResiduseDetailedAll()
     Dim wb As Workbook
@@ -36,11 +36,13 @@ Sub UpdateResiduseDetailedAll()
     Dim cFrom As Long, cTo As Long, cIn As Long, cOut As Long
     Dim cCode As Long, cName As Long, cPrice As Long, cUnit As Long
     Dim cCat As Long, cCat3 As Long, cNote As Long, c11 As Long, c12 As Long
+    Dim cOpType As Long
 
     ' змінні для рядка
     Dim fromVal As String, toVal As String, cat As String
     Dim prefix As String, suffix As String, key As String
     Dim vIn As Double, vOut As Double, v As Double
+    Dim opType As String, movQty As Double
 
     Set wb = ThisWorkbook
     Set wsData = wb.Worksheets("База")
@@ -74,7 +76,7 @@ Sub UpdateResiduseDetailedAll()
     Application.EnableEvents = False
     Application.Calculation = xlCalculationManual
 
-    '--- Індекси колонок (один раз) ---
+    '--- Індекси колонок ---
     With tbAllData
         cFrom = .ListColumns("Звідки").Index
         cTo = .ListColumns("Куди").Index
@@ -89,73 +91,82 @@ Sub UpdateResiduseDetailedAll()
         cNote = .ListColumns("Примітка").Index
         c11 = .ListColumns("Поле 11").Index
         c12 = .ListColumns("Поле 12").Index
+        cOpType = .ListColumns("Запасне поле2").Index
     End With
 
-    '--- Читаємо всю базу в масив ---
+    ' Читаємо всю базу в масив
     data = tbAllData.DataBodyRange.value
-    If dataCount = 1 Then
-        ' для одного рядка .Value повертає 2D масив теж, але перестрахуємось
-        If Not IsArray(data) Then
-            MsgBox "Не вдалося прочитати дані таблиці.", vbExclamation
-            GoTo CleanExit
-        End If
-    End If
 
-    '--- Список підрозділів (спочатку "Звідки", потім "Куди") ---
     Set dictUnits = CreateObject("Scripting.Dictionary")
-    For i = 1 To dataCount
-        fromVal = SafeStr(data(i, cFrom))
-        If fromVal <> "" Then
-            If Not dictUnits.exists(fromVal) Then dictUnits.Add fromVal, CreateObject("Scripting.Dictionary")
-        End If
-    Next i
-    For i = 1 To dataCount
-        toVal = SafeStr(data(i, cTo))
-        If toVal <> "" Then
-            If Not dictUnits.exists(toVal) Then dictUnits.Add toVal, CreateObject("Scripting.Dictionary")
-        End If
-    Next i
 
-    '--- Один прохід по базі ---
+    '--- Один прохід по базі з урахуванням типу операції ---
     For i = 1 To dataCount
         fromVal = SafeStr(data(i, cFrom))
         toVal = SafeStr(data(i, cTo))
+        opType = LCase(Trim(SafeStr(data(i, cOpType))))
+        vIn = SafeNum(data(i, cIn))
+        vOut = SafeNum(data(i, cOut))
 
-        If fromVal <> "" Or toVal <> "" Then
-            vIn = SafeNum(data(i, cIn))
-            vOut = SafeNum(data(i, cOut))
+        prefix = SafeStr(data(i, cCode)) & "||" & _
+                 SafeStr(data(i, cName)) & "||" & _
+                 SafeStr(data(i, cPrice)) & "||" & _
+                 SafeStr(data(i, cUnit)) & "||"
+        suffix = "||" & SafeStr(data(i, cNote)) & "||" & _
+                 SafeStr(data(i, c11)) & "||" & _
+                 SafeStr(data(i, c12))
 
-            prefix = SafeStr(data(i, cCode)) & "||" & _
-                     SafeStr(data(i, cName)) & "||" & _
-                     SafeStr(data(i, cPrice)) & "||" & _
-                     SafeStr(data(i, cUnit)) & "||"
-            suffix = "||" & SafeStr(data(i, cNote)) & "||" & _
-                     SafeStr(data(i, c11)) & "||" & _
-                     SafeStr(data(i, c12))
-
-            ' Надходження в підрозділ "Куди"
-            If toVal <> "" Then
-                cat = SafeStr(data(i, cCat3))
-                key = prefix & cat & suffix
-                Set d = dictUnits(toVal)
-                If Not d.exists(key) Then d.Add key, 0#
-                d(key) = d(key) + vIn
-                d(key) = d(key) + vOut
-            End If
-
-            ' Вибуття з підрозділу "Звідки"
-            If fromVal <> "" Then
-                If fromVal = toVal Then
+        Select Case opType
+            Case "надходження"
+                ' Впливає ТІЛЬКИ на отримувача (Куди)
+                If toVal <> "" And vIn <> 0 Then
                     cat = SafeStr(data(i, cCat3))
-                Else
-                    cat = SafeStr(data(i, cCat))
+                    If Len(cat) = 0 Then cat = SafeStr(data(i, cCat))
+                    key = prefix & cat & suffix
+                    If Not dictUnits.exists(toVal) Then dictUnits.Add toVal, CreateObject("Scripting.Dictionary")
+                    Set d = dictUnits(toVal)
+                    If Not d.exists(key) Then d.Add key, 0#
+                    d(key) = d(key) + vIn
                 End If
-                key = prefix & cat & suffix
-                Set d = dictUnits(fromVal)
-                If Not d.exists(key) Then d.Add key, 0#
-                d(key) = d(key) - vOut
-            End If
-        End If
+
+            Case "вибуття"
+                ' Впливає ТІЛЬКИ на відправника (Звідки)
+                If fromVal <> "" And vOut <> 0 Then
+                    cat = SafeStr(data(i, cCat))
+                    key = prefix & cat & suffix
+                    If Not dictUnits.exists(fromVal) Then dictUnits.Add fromVal, CreateObject("Scripting.Dictionary")
+                    Set d = dictUnits(fromVal)
+                    If Not d.exists(key) Then d.Add key, 0#
+                    d(key) = d(key) - vOut
+                End If
+
+            Case "внутрішнє переміщення"
+                ' Кількість береться з Вибуло (або Надійшло як резерв)
+                movQty = vOut
+                If movQty = 0 Then movQty = vIn
+
+                If movQty <> 0 Then
+                    ' Додаємо отримувачу (Куди)
+                    If toVal <> "" Then
+                        cat = SafeStr(data(i, cCat3))
+                        If Len(cat) = 0 Then cat = SafeStr(data(i, cCat))
+                        key = prefix & cat & suffix
+                        If Not dictUnits.exists(toVal) Then dictUnits.Add toVal, CreateObject("Scripting.Dictionary")
+                        Set d = dictUnits(toVal)
+                        If Not d.exists(key) Then d.Add key, 0#
+                        d(key) = d(key) + movQty
+                    End If
+
+                    ' Віднімаємо у відправника (Звідки)
+                    If fromVal <> "" Then
+                        cat = SafeStr(data(i, cCat))
+                        key = prefix & cat & suffix
+                        If Not dictUnits.exists(fromVal) Then dictUnits.Add fromVal, CreateObject("Scripting.Dictionary")
+                        Set d = dictUnits(fromVal)
+                        If Not d.exists(key) Then d.Add key, 0#
+                        d(key) = d(key) - movQty
+                    End If
+                End If
+        End Select
 
         If i Mod 500 = 0 Then
             Call ProgressBar.Progress(i / dataCount * 90)
@@ -182,7 +193,6 @@ Sub UpdateResiduseDetailedAll()
                 out(n, 6) = parts(4)
                 out(n, 7) = parts(3)
                 out(n, 8) = parts(0)
-                ' колонка 9 (Поле 10) - не використовується
                 out(n, 10) = parts(6)
                 out(n, 11) = parts(7)
                 out(n, 12) = CStr(unitKey)
@@ -230,7 +240,6 @@ Sub UpdateResiduseDetailedAll()
     wsOutput.Range("RngSumRes").Formula = "=SUBTOTAL(9,M3:M" & lastRowRes & ")"
     wsOutput.Range("RngTotalRes").value = "Всього:"
     If Err.Number <> 0 Then
-        MsgBox "Іменовані діапазони RngSumRes / RngTotalRes не знайдено — підсумок пропущено.", vbExclamation
         Err.Clear
     End If
     On Error GoTo ErrHandler
@@ -252,4 +261,3 @@ ErrHandler:
     Application.ScreenUpdating = True
     MsgBox msg, vbCritical, "UpdateResiduseDetailedAll"
 End Sub
-

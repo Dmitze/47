@@ -196,6 +196,9 @@ Public Sub BuildResiduseDetailedReport( _
     Dim a As Variant
     Dim parts() As String
     Dim endBalance As Double
+    Dim dictInternal As Object
+    Dim docType As String
+    Dim docNum As String
 
     If endDate < startDate Then
         Err.Raise vbObjectError + 701, "BuildResiduseDetailedReport", _
@@ -207,13 +210,14 @@ Public Sub BuildResiduseDetailedReport( _
     Set wsOut = wb.Worksheets("Довідка по підрозділу 2.0")
     Set tbAllData = wsData.ListObjects("AllData")
     Set dict = CreateObject("Scripting.Dictionary")
+    Set dictInternal = ResBuildInternalUnits(tbAllData)   ' підрозділи, які отримували майно (для розпізнавання повернень)
 
     Application.ScreenUpdating = False
 
     '---------------------------------------------------------------------------
     ' Очищення і структура довідки
     '---------------------------------------------------------------------------
-    wsOut.Range("B8:N" & wsOut.Rows.count).ClearContents
+    wsOut.Range("B8:Q" & wsOut.Rows.count).ClearContents
 
     With wsOut
         .Cells(7, 2).value = "№"
@@ -229,7 +233,11 @@ Public Sub BuildResiduseDetailedReport( _
         .Cells(7, 12).value = "Одиниця виміру"
         .Cells(7, 13).value = "Код номенклатури"
         .Cells(7, 14).value = "Залишок на початок"
+        .Cells(7, 15).value = "Повернено (службова)"
+        .Cells(7, 16).value = "Знищено (службова)"
+        .Cells(7, 17).value = "Документи (службова)"
         .Columns("N").Hidden = True
+        .Columns("O:Q").Hidden = True
     End With
 
     On Error Resume Next
@@ -291,6 +299,12 @@ Public Sub BuildResiduseDetailedReport( _
                 itemNote = CStr(tbAllData.DataBodyRange(i, _
                            tbAllData.ListColumns("Примітка").Index).value)
 
+                docType = ResTxt(tbAllData.DataBodyRange(i, _
+                          tbAllData.ListColumns("Тип документа").Index).value)
+
+                docNum = ResTxt(tbAllData.DataBodyRange(i, _
+                         tbAllData.ListColumns("№ документа").Index).value)
+
                 Select Case operationType
 
                     '===========================================================
@@ -319,7 +333,44 @@ Public Sub BuildResiduseDetailedReport( _
 
                                 UpdateResiduseDictionary _
                                     dict, key, rowDate, startDate, endDate, _
-                                    movementQty, True
+                                    movementQty, True, 1, _
+                                        ResDocEntry(1, docType, docNum, rowDate, itemNote)
+
+                            End If
+
+                        End If
+
+
+                        '-----------------------------------------------------------
+                        ' ПОВЕРНЕННЯ З ПІДРОЗДІЛУ НА СКЛАД.
+                        ' Накладна повернення записується як "надходження":
+                        '   Звідки = підрозділ, Куди = склад.
+                        ' Крім надходження на склад, ця кількість ВИБУВАЄ з
+                        ' підрозділу "Звідки" (інакше повернення не видно у "Вибуло").
+                        ' Надходження від постачальника сюди не потрапляє.
+                        '-----------------------------------------------------------
+                        If movementQty <> 0 And Len(fromVal) > 0 Then
+
+                            If ResIsReturn(fromVal, toVal, dictInternal) Then
+
+                                If buildAllUnits Or fromVal = selectedUnit Then
+
+                                    mvoFrom = CStr(tbAllData.DataBodyRange(i, _
+                                              tbAllData.ListColumns("МВО звідки").Index).value)
+
+                                    catFrom = CStr(tbAllData.DataBodyRange(i, _
+                                              tbAllData.ListColumns("Категорія").Index).value)
+
+                                    key = MakeResiduseKey( _
+                                            fromVal, mvoFrom, itemName, itemPrice, itemUnit, _
+                                            catFrom, itemNote, itemCode)
+
+                                    UpdateResiduseDictionary _
+                                        dict, key, rowDate, startDate, endDate, _
+                                        movementQty, False, 2, _
+                                        ResDocEntry(2, docType, docNum, rowDate, itemNote)
+
+                                End If
 
                             End If
 
@@ -352,7 +403,8 @@ Public Sub BuildResiduseDetailedReport( _
 
                                 UpdateResiduseDictionary _
                                     dict, key, rowDate, startDate, endDate, _
-                                    movementQty, False
+                                    movementQty, False, 3, _
+                                        ResDocEntry(3, docType, docNum, rowDate, itemNote)
 
                             End If
 
@@ -396,7 +448,8 @@ Public Sub BuildResiduseDetailedReport( _
 
                                     UpdateResiduseDictionary _
                                         dict, key, rowDate, startDate, endDate, _
-                                        movementQty, True
+                                        movementQty, True, 1, _
+                                        ResDocEntry(1, docType, docNum, rowDate, itemNote)
 
                                 End If
 
@@ -421,7 +474,8 @@ Public Sub BuildResiduseDetailedReport( _
 
                                     UpdateResiduseDictionary _
                                         dict, key, rowDate, startDate, endDate, _
-                                        movementQty, False
+                                        movementQty, False, 2, _
+                                        ResDocEntry(2, docType, docNum, rowDate, itemNote)
 
                                 End If
 
@@ -486,6 +540,9 @@ Public Sub BuildResiduseDetailedReport( _
             wsOut.Cells(rowIndex, 12).value = parts(4)              'Од. вим.
             wsOut.Cells(rowIndex, 13).value = parts(7)              'Код
             wsOut.Cells(rowIndex, 14).value = CDbl(a(1))            'Залишок на початок
+            wsOut.Cells(rowIndex, 15).value = CDbl(a(5))            'Повернено (службова)
+            wsOut.Cells(rowIndex, 16).value = CDbl(a(6))            'Знищено (службова)
+            wsOut.Cells(rowIndex, 17).value = CStr(a(4))            'Документи (службова)
 
             rowIndex = rowIndex + 1
 
@@ -519,14 +576,19 @@ Private Sub UpdateResiduseDictionary( _
     ByVal startDate As Date, _
     ByVal endDate As Date, _
     ByVal qty As Double, _
-    ByVal isIncoming As Boolean)
+    ByVal isIncoming As Boolean, _
+    Optional ByVal status As Long = 0, _
+    Optional ByVal docEntry As String = "")
 
+    ' a(1) = залишок на початок, a(2) = надійшло, a(3) = вибуло,
+    ' a(4) = документи періоду (службовий текст),
+    ' a(5) = з "вибуло": повернено на склад, a(6) = з "вибуло": знищено
     Dim a As Variant
 
     If dict.exists(key) Then
         a = dict(key)
     Else
-        ReDim a(1 To 3)
+        ReDim a(1 To 6)
     End If
 
     If rowDate < startDate Then
@@ -543,7 +605,11 @@ Private Sub UpdateResiduseDictionary( _
             a(2) = CDbl(a(2)) + qty
         Else
             a(3) = CDbl(a(3)) + qty
+            If status = 2 Then a(5) = CDbl(a(5)) + qty
+            If status = 3 Then a(6) = CDbl(a(6)) + qty
         End If
+
+        a(4) = CStr(a(4)) & docEntry
 
     End If
 
@@ -680,3 +746,114 @@ Public Sub SaveResiduseOneUnit2()
 
 End Sub
 
+
+'===============================================================================
+' ДОПОМІЖНІ ФУНКЦІЇ: повернення на склад і документи руху
+'===============================================================================
+
+Private Function ResFS() As String
+    ResFS = ChrW(166)      ' роздільник полів запису документа
+End Function
+
+Private Function ResES() As String
+    ResES = ChrW(167)      ' роздільник записів документів
+End Function
+
+Private Function ResTxt(ByVal v As Variant) As String
+    If IsError(v) Then Exit Function
+    If IsNull(v) Then Exit Function
+    ResTxt = CStr(v)
+End Function
+
+Private Function ResUnitKey(ByVal s As String) As String
+    s = Replace(s, ChrW(160), "")
+    s = Replace(s, " ", "")
+    ResUnitKey = LCase$(s)
+End Function
+
+Private Function ResColArray(ByVal tb As ListObject, ByVal colName As String) As Variant
+    Dim rng As Range
+    Dim arr() As Variant
+
+    Set rng = tb.ListColumns(colName).DataBodyRange
+    If rng.Cells.count = 1 Then
+        ReDim arr(1 To 1, 1 To 1)
+        arr(1, 1) = rng.value
+        ResColArray = arr
+    Else
+        ResColArray = rng.value
+    End If
+End Function
+
+' Підрозділи, які мали майно: кому видавали ("внутрішнє переміщення", Куди)
+' і звідки вибувало ("вибуття", Звідки). Склади сюди не потрапляють.
+Private Function ResBuildInternalUnits(ByVal tb As ListObject) As Object
+    Dim d As Object
+    Dim aF As Variant, aT As Variant, aOp As Variant
+    Dim n As Long, r As Long
+    Dim op As String, k As String
+
+    Set d = CreateObject("Scripting.Dictionary")
+    Set ResBuildInternalUnits = d
+    If tb.DataBodyRange Is Nothing Then Exit Function
+
+    n = tb.DataBodyRange.Rows.count
+    aF = ResColArray(tb, "Звідки")
+    aT = ResColArray(tb, "Куди")
+    aOp = ResColArray(tb, "Запасне поле2")
+
+    For r = 1 To n
+        op = LCase$(Trim$(ResTxt(aOp(r, 1))))
+        k = ""
+        If op = "внутрішнє переміщення" Then
+            k = ResUnitKey(ResTxt(aT(r, 1)))
+        ElseIf op = "вибуття" Then
+            k = ResUnitKey(ResTxt(aF(r, 1)))
+        End If
+        If Len(k) > 0 And Left$(k, 5) <> "склад" Then
+            If Not d.exists(k) Then d.Add k, 1
+        End If
+    Next r
+End Function
+
+' "надходження", де Звідки - підрозділ, який отримував майно, а Куди - склад = повернення
+Private Function ResIsReturn(ByVal fromVal As String, ByVal toVal As String, ByVal internalUnits As Object) As Boolean
+    Dim k As String
+
+    k = ResUnitKey(fromVal)
+    If Len(k) = 0 Then Exit Function
+    If k = ResUnitKey(toVal) Then Exit Function
+    If InStr(1, toVal, "склад", vbTextCompare) = 0 Then Exit Function
+    If internalUnits Is Nothing Then Exit Function
+    ResIsReturn = internalUnits.exists(k)
+End Function
+
+' Серійний номер у "Примітці": є цифри, 4-30 літер/цифр. Інакше "" (це просто коментар).
+Private Function ResSerialText(ByVal s As String) As String
+    Dim i As Long, ch As Long, cnt As Long
+    Dim hasDigit As Boolean
+
+    s = Trim$(s)
+    If Len(s) = 0 Then Exit Function
+    For i = 1 To Len(s)
+        ch = AscW(Mid$(s, i, 1))
+        If ch < 0 Then ch = ch + 65536
+        If ch >= 48 And ch <= 57 Then
+            hasDigit = True
+            cnt = cnt + 1
+        ElseIf (ch >= 65 And ch <= 90) Or (ch >= 97 And ch <= 122) Or (ch >= 1024 And ch <= 1279) Then
+            cnt = cnt + 1
+        End If
+    Next i
+    If hasDigit And cnt >= 4 And cnt <= 30 And Len(s) <= 40 Then ResSerialText = s
+End Function
+
+' Запис про документ руху: статус ¦ тип ¦ номер ¦ дата ¦ с/н §
+' статус: 1 = видано, 2 = повернено, 3 = знищено
+Private Function ResDocEntry(ByVal st As Long, ByVal docType As String, ByVal docNum As String, _
+                             ByVal rowDate As Date, ByVal itemNote As String) As String
+    Dim serial As String
+    If st = 3 Then serial = ResSerialText(itemNote)
+    ResDocEntry = CStr(st) & ResFS() & Trim$(docType) & ResFS() & Trim$(docNum) & ResFS() & _
+                  CStr(CLng(rowDate)) & ResFS() & serial & ResES()
+End Function

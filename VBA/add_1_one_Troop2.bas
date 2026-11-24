@@ -48,6 +48,10 @@ Private Const EXPORT_ROOT_FOLDER_NAME As String = "Д1_експорт"
 Private Const KEY_SEP As String = "||"
 Private Const NO_MVO_LABEL As String = "Без МВО"
 
+' Документи цього типу вказуються в примітці БЕЗ дати (наприклад: накази № 1/БН/дск)
+Private Const ADD1N_NO_DATE_WORD As String = "наказ"
+Private Const ADD1N_QTY_LABEL As String = "од."
+
 
 '===============================================================================
 ' 1. СТВОРИТИ ДОДАТОК 1 ЗА ОДНИМ ПІДРОЗДІЛОМ
@@ -1050,7 +1054,9 @@ Private Sub Add1_FillFromExactRows( _
 
     Dim itemName As String
     Dim itemUnit As String
-    Dim itemPrice As Variant
+    Dim qRet As Double
+    Dim qDes As Double
+    Dim docsTxt As String
 
     Dim qIn As Double
     Dim qOut As Double
@@ -1106,34 +1112,42 @@ Private Sub Add1_FillFromExactRows( _
     '---------------------------------------------------------------------------
     ' Читаємо ТІЛЬКИ передані рядки конкретного МВО
     '---------------------------------------------------------------------------
+    ' колонка G: замість ціни - примітка з документами
+    On Error Resume Next
+    tbl.HeaderRowRange.Cells(1, 7).value = "Примітка"
+    On Error GoTo 0
+
     For Each rowNumber In rowsForMVO
 
-        itemName = CStr(wsResiduse.Cells(CLng(rowNumber), "E").value)
-        itemPrice = wsResiduse.Cells(CLng(rowNumber), "F").value
-        itemUnit = CStr(wsResiduse.Cells(CLng(rowNumber), "L").value)
+        itemName = Trim$(CStr(wsResiduse.Cells(CLng(rowNumber), "E").value))
+        itemUnit = Trim$(CStr(wsResiduse.Cells(CLng(rowNumber), "L").value))
 
         qIn = Add1_SafeDouble(wsResiduse.Cells(CLng(rowNumber), "G").value)
         qOut = Add1_SafeDouble(wsResiduse.Cells(CLng(rowNumber), "H").value)
         qBalance = Add1_SafeDouble(wsResiduse.Cells(CLng(rowNumber), "I").value)
         qStart = Add1_SafeDouble(wsResiduse.Cells(CLng(rowNumber), "N").value)
 
-        'У межах одного МВО групування:
-        'Найменування + Ціна + Од. виміру
-        key = _
-            itemName & KEY_SEP & _
-            CStr(itemPrice) & KEY_SEP & _
-            itemUnit
+        ' службові колонки довідки: повернено / знищено / документи руху
+        qRet = Add1_SafeDouble(wsResiduse.Cells(CLng(rowNumber), "O").value)
+        qDes = Add1_SafeDouble(wsResiduse.Cells(CLng(rowNumber), "P").value)
+        docsTxt = Add1N_CellText(wsResiduse.Cells(CLng(rowNumber), "Q"))
+
+        'Групування: Найменування + Од. виміру (ціна не враховується)
+        key = itemName & KEY_SEP & itemUnit
 
         If dictItems.exists(key) Then
             a = dictItems(key)
         Else
-            ReDim a(1 To 4)
+            ReDim a(1 To 7)
         End If
 
         a(1) = CDbl(a(1)) + qIn
         a(2) = CDbl(a(2)) + qOut
         a(3) = CDbl(a(3)) + qBalance
         a(4) = CDbl(a(4)) + qStart
+        a(5) = CDbl(a(5)) + qRet
+        a(6) = CDbl(a(6)) + qDes
+        a(7) = CStr(a(7)) & docsTxt
 
         dictItems(key) = a
 
@@ -1162,11 +1176,13 @@ Private Sub Add1_FillFromExactRows( _
 
         newRow.Range(1, 1).value = counter
         newRow.Range(1, 2).value = parts(0)                   'Найменування
-        newRow.Range(1, 3).value = parts(2)                   'Од. виміру
+        newRow.Range(1, 3).value = parts(1)                   'Од. виміру
         newRow.Range(1, 4).value = CDbl(a(1))                 'Надійшло
         newRow.Range(1, 5).value = CDbl(a(2))                 'Вибуло
         newRow.Range(1, 6).value = CDbl(a(3))                 'Залишок
-        newRow.Range(1, 7).value = Add1_SafeDouble(parts(1))  'Ціна
+        newRow.Range(1, 7).NumberFormat = "General"
+        newRow.Range(1, 7).value = Add1N_NoteFromGroup( _
+            CDbl(a(1)), CDbl(a(5)), CDbl(a(6)), CStr(a(7)))   'Примітка: документи
 
         'Повертаємо початковий залишок у тому вигляді,
         'як він був розрахований при формуванні "Довідка по підрозділу 2.0".
@@ -1197,6 +1213,15 @@ Private Sub Add1_FillFromExactRows( _
                 .VerticalAlignment = xlCenter
                 .HorizontalAlignment = xlRight
             End With
+        End If
+
+        If dataRange.Columns.count >= 7 Then
+            With dataRange.Columns(7)
+                .WrapText = True
+                .HorizontalAlignment = xlLeft
+                .VerticalAlignment = xlCenter
+            End With
+            dataRange.EntireRow.AutoFit
         End If
 
         totalNadiyshlo = WorksheetFunction.Round( _
@@ -2404,4 +2429,276 @@ Private Sub Add1_SetGeneratedButtonCaption( _
 End Sub
 
 
+'===============================================================================
+' ПРИМІТКА (колонка G): документи по статусах
+'
+'   Видано N од. (накладні № 14 від 01.08.25, ...)
+'   Повернено N од. (накладні № ...)
+'   Знищено N од. під час виконання бойових завдань (накази № ...; рапорти № ... від ...;
+'                                                      втрачено с/н ... від ...)
+'
+' Дані беруться зі службових колонок O:Q аркуша "Довідка по підрозділу 2.0".
+'===============================================================================
 
+Private Function Add1N_CellText(ByVal c As Range) As String
+    Dim v As Variant
+    v = c.value
+    If IsError(v) Then Exit Function
+    If IsNull(v) Then Exit Function
+    Add1N_CellText = CStr(v)
+End Function
+
+Private Function Add1N_NoteFromGroup(ByVal q1 As Double, ByVal q2 As Double, ByVal q3 As Double, _
+                                     ByVal docsTxt As String) As String
+    Dim d(1 To 3) As Object
+    Dim st As Long
+    Dim q As Double
+    Dim res As String
+
+    For st = 1 To 3
+        Set d(st) = CreateObject("Scripting.Dictionary")
+    Next st
+    Add1N_ParseDocs docsTxt, d
+
+    For st = 1 To 3
+        Select Case st
+            Case 1
+                q = q1
+            Case 2
+                q = q2
+            Case Else
+                q = q3
+        End Select
+        If Round(q, 6) <> 0 Then
+            If Len(res) > 0 Then res = res & vbLf
+            res = res & Add1N_StatusLine(st, q, d(st))
+        End If
+    Next st
+
+    Add1N_NoteFromGroup = res
+End Function
+
+' запис: статус ¦ тип ¦ номер ¦ дата ¦ с/н §
+Private Sub Add1N_ParseDocs(ByVal txt As String, ByRef d() As Object)
+    Dim entries() As String
+    Dim f() As String
+    Dim i As Long, st As Long
+    Dim dt As Double
+    Dim k As String
+
+    If Len(txt) = 0 Then Exit Sub
+    entries = Split(txt, ChrW(167))
+    For i = LBound(entries) To UBound(entries)
+        If Len(entries(i)) > 0 Then
+            f = Split(entries(i), ChrW(166))
+            If UBound(f) >= 4 Then
+                st = CLng(val(f(0)))
+                If st >= 1 And st <= 3 Then
+                    dt = val(f(3))
+                    k = LCase$(f(1)) & "|" & LCase$(f(2)) & "|" & CStr(dt) & "|" & LCase$(f(4))
+                    If Not d(st).exists(k) Then d(st).Add k, Array(f(1), f(2), dt, f(4))
+                End If
+            End If
+        End If
+    Next i
+End Sub
+
+Private Function Add1N_StatusLine(ByVal st As Long, ByVal q As Double, ByVal docs As Object) As String
+    Dim head As String
+    Dim body As String
+
+    Select Case st
+        Case 1
+            head = "Видано "
+        Case 2
+            head = "Повернено "
+        Case Else
+            head = "Знищено "
+    End Select
+    head = head & Add1N_FmtQty(q) & " " & ADD1N_QTY_LABEL
+    If st = 3 Then head = head & " під час виконання бойових завдань"
+
+    body = Add1N_DocsText(docs)
+    If Len(body) > 0 Then head = head & " (" & body & ")"
+    Add1N_StatusLine = head
+End Function
+
+Private Function Add1N_DocsText(ByVal docs As Object) As String
+    Dim items As Variant
+    Dim e As Variant
+    Dim n As Long, i As Long, j As Long, cur As Long, cnt As Long
+    Dim yr() As Long
+    Dim num() As Double
+    Dim dt() As Double
+    Dim idx() As Long
+    Dim grp As Object
+    Dim typeKey As String
+    Dim typeKeys() As String
+    Dim tk As Variant
+    Dim tmpS As String
+    Dim piece As String
+    Dim lost As String
+    Dim res As String
+
+    n = docs.count
+    If n = 0 Then Exit Function
+    items = docs.items
+
+    ReDim yr(0 To n - 1)
+    ReDim num(0 To n - 1)
+    ReDim dt(0 To n - 1)
+    ReDim idx(0 To n - 1)
+
+    For i = 0 To n - 1
+        e = items(i)
+        dt(i) = CDbl(e(2))
+        If dt(i) = 0 Then
+            yr(i) = 9999
+        Else
+            yr(i) = Year(dt(i))
+        End If
+        num(i) = Add1N_LeadNum(CStr(e(1)))
+        idx(i) = i
+    Next i
+
+    ' сортування вставками: рік -> номер -> дата
+    For i = 1 To n - 1
+        cur = idx(i)
+        j = i - 1
+        Do While j >= 0
+            If Add1N_CmpKey(yr(idx(j)), num(idx(j)), dt(idx(j)), yr(cur), num(cur), dt(cur)) <= 0 Then Exit Do
+            idx(j + 1) = idx(j)
+            j = j - 1
+        Loop
+        idx(j + 1) = cur
+    Next i
+
+    Set grp = CreateObject("Scripting.Dictionary")
+    For i = 0 To n - 1
+        e = items(idx(i))
+        If Len(CStr(e(3))) > 0 Then
+            ' втрачений серійний номер
+            If Len(lost) > 0 Then lost = lost & ", "
+            lost = lost & CStr(e(3))
+            If CDbl(e(2)) > 0 Then lost = lost & " від " & Format$(CDate(e(2)), "dd.mm.yy")
+        Else
+            typeKey = LCase$(Trim$(CStr(e(0))))
+            If Len(CStr(e(1))) = 0 Then
+                piece = "без номера"
+            Else
+                piece = ChrW(8470) & " " & CStr(e(1))
+            End If
+            If InStr(typeKey, ADD1N_NO_DATE_WORD) = 0 And CDbl(e(2)) > 0 Then
+                piece = piece & " від " & Format$(CDate(e(2)), "dd.mm.yy")
+            End If
+            If grp.exists(typeKey) Then
+                grp(typeKey) = grp(typeKey) & ", " & piece
+            Else
+                grp.Add typeKey, piece
+            End If
+        End If
+    Next i
+
+    ' типи документів - за алфавітом
+    cnt = grp.count
+    If cnt > 0 Then
+        ReDim typeKeys(0 To cnt - 1)
+        i = 0
+        For Each tk In grp.Keys
+            typeKeys(i) = CStr(tk)
+            i = i + 1
+        Next tk
+        For i = 1 To cnt - 1
+            tmpS = typeKeys(i)
+            j = i - 1
+            Do While j >= 0
+                If StrComp(typeKeys(j), tmpS, vbTextCompare) <= 0 Then Exit Do
+                typeKeys(j + 1) = typeKeys(j)
+                j = j - 1
+            Loop
+            typeKeys(j + 1) = tmpS
+        Next i
+        For i = 0 To cnt - 1
+            If Len(res) > 0 Then res = res & "; "
+            res = res & Add1N_Plural(typeKeys(i)) & " " & grp(typeKeys(i))
+        Next i
+    End If
+
+    If Len(lost) > 0 Then
+        If Len(res) > 0 Then res = res & "; "
+        res = res & "втрачено с/н " & lost
+    End If
+
+    Add1N_DocsText = res
+End Function
+
+Private Function Add1N_CmpKey(ByVal ya As Long, ByVal na As Double, ByVal da As Double, _
+                              ByVal yb As Long, ByVal nb As Double, ByVal db As Double) As Long
+    If ya < yb Then
+        Add1N_CmpKey = -1
+    ElseIf ya > yb Then
+        Add1N_CmpKey = 1
+    ElseIf na < nb Then
+        Add1N_CmpKey = -1
+    ElseIf na > nb Then
+        Add1N_CmpKey = 1
+    ElseIf da < db Then
+        Add1N_CmpKey = -1
+    ElseIf da > db Then
+        Add1N_CmpKey = 1
+    End If
+End Function
+
+' "112/п/ІНЖ" -> 112 ; без числа на початку -> в кінець
+Private Function Add1N_LeadNum(ByVal s As String) As Double
+    Dim i As Long
+    s = Trim$(s)
+    i = 1
+    Do While i <= Len(s)
+        If Not (Mid$(s, i, 1) Like "#") Then Exit Do
+        i = i + 1
+    Loop
+    If i > 1 Then
+        Add1N_LeadNum = val(Left$(s, i - 1))
+    Else
+        Add1N_LeadNum = 1E+300
+    End If
+End Function
+
+' множина типу документа: накладна -> накладні, рапорт -> рапорти, наказ -> накази, акт -> акти
+Private Function Add1N_Plural(ByVal t As String) As String
+    Dim words() As String
+    Dim w As String
+    Dim lastCh As String
+
+    t = LCase$(Trim$(t))
+    If Len(t) = 0 Then
+        Add1N_Plural = "документи"
+        Exit Function
+    End If
+
+    words = Split(t, " ")
+    w = words(0)
+    If Len(w) >= 2 Then
+        lastCh = Right$(w, 1)
+        If lastCh = "а" Then
+            If InStr("кгхчшщж", Mid$(w, Len(w) - 1, 1)) > 0 Then
+                w = Left$(w, Len(w) - 1) & "и"
+            Else
+                w = Left$(w, Len(w) - 1) & "і"
+            End If
+        ElseIf InStr("бвгґджзйклмнпрстфхцчшщ", lastCh) > 0 Then
+            w = w & "и"
+        End If
+    End If
+    words(0) = w
+    Add1N_Plural = Join(words, " ")
+End Function
+
+Private Function Add1N_FmtQty(ByVal x As Double) As String
+    If Abs(x - Round(x, 0)) < 0.000001 Then
+        Add1N_FmtQty = CStr(CLng(Round(x, 0)))
+    Else
+        Add1N_FmtQty = Replace(CStr(Round(x, 3)), ".", ",")
+    End If
+End Function

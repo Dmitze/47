@@ -1,4 +1,5 @@
 Attribute VB_Name = "Add14"
+
 Option Explicit
 
 ' ============================================================
@@ -8,7 +9,26 @@ Option Explicit
 '  рядок аркуша "База", де формат неправильний.
 '  Потрібні в книзі: функція CleanFileName, форма ProgressBar.
 '  Функція FindValue більше не потрібна.
+'
+'  ЗМІНИ (v2):
+'   1. Підтягуються ТІЛЬКИ накладні: видача зі складу на підрозділ і
+'      повернення з підрозділу на склад. Інше (акти, списання, ...) пропускається.
+'   2. НАПРЯМОК у книзі: видача на підрозділ = НАДІЙШЛО, повернення на склад = ВИБУЛО
+'      (раніше було навпаки: видача йшла у "вибуло", а повернення - у "надійшло").
+'   3. Сортування: рік накладної -> номер накладної (за числом) -> дата -> порядок бази.
+'   4. Залишок "становить" рахується від попереднього рядка; якщо стає від'ємним
+'      (повернули більше, ніж видали) - у кінці показується попередження.
 ' ============================================================
+
+' Документи цього типу вважаються накладними (видача / повернення)
+Private Const NUMBERED_DOC_WORD As String = "накладн"
+' Слово в назві складу: визначає напрямок (Звідки = склад -> видача, Куди = склад -> повернення)
+Private Const WAREHOUSE_WORD As String = "склад"
+
+' ключі сортування (заповнюються в Add13SortRows)
+Private m13Year() As Long
+Private m13Num() As Double
+Private m13Date() As Double
 
 ' ---------- допоміжні функції ----------
 
@@ -86,6 +106,167 @@ Private Function FolderExists(ByVal p As String) As Boolean
     On Error GoTo 0
 End Function
 
+' ---------- накладні: вид операції, фільтр, сортування ----------
+
+' 1 = видача зі складу на підрозділ (в книзі НАДІЙШЛО)
+' 2 = повернення з підрозділу на склад (в книзі ВИБУЛО)
+' 0 = не підходить (не накладна, акт, списання, переміщення між підрозділами ...)
+Private Function Add13Kind(ByVal docType As String, ByVal opType As String, _
+                           ByVal FromUnit As String, ByVal toUnit As String) As Long
+    Dim fromW As Boolean, toW As Boolean
+
+    If InStr(1, docType, NUMBERED_DOC_WORD, vbTextCompare) = 0 Then Exit Function
+    opType = LCase$(Trim$(opType))
+    If opType <> "внутрішнє переміщення" And opType <> "надходження" Then Exit Function
+
+    fromW = (InStr(1, FromUnit, WAREHOUSE_WORD, vbTextCompare) > 0)
+    toW = (InStr(1, toUnit, WAREHOUSE_WORD, vbTextCompare) > 0)
+
+    If fromW And Not toW Then
+        Add13Kind = 1
+    ElseIf toW And Not fromW Then
+        Add13Kind = 2
+    End If
+End Function
+
+' Залишає в масиві лише накладні з видачею / поверненням. skipped = скільки рядків відкинуто.
+Private Sub Add13KeepInvoices(ByRef data() As Variant, ByRef srcRow() As Long, ByRef skipped As Long)
+    Dim n As Long, cols As Long
+    Dim r As Long, c As Long, k As Long
+    Dim keep() As Boolean
+    Dim kept As Long
+    Dim tmp() As Variant
+    Dim tmpSrc() As Long
+
+    skipped = 0
+    n = UBound(data, 1) - 1
+    cols = UBound(data, 2)
+    ReDim keep(2 To n + 1)
+
+    For r = 2 To n + 1
+        keep(r) = (Add13Kind(SafeStr(data(r, 25)), SafeStr(data(r, 26)), SafeStr(data(r, 8)), SafeStr(data(r, 9))) > 0)
+        If keep(r) Then kept = kept + 1
+    Next r
+
+    skipped = n - kept
+    If skipped = 0 Then Exit Sub
+
+    ReDim tmp(1 To kept + 1, 1 To cols)
+    ReDim tmpSrc(1 To kept + 1)
+    For c = 1 To cols
+        tmp(1, c) = data(1, c)
+    Next c
+    k = 1
+    For r = 2 To n + 1
+        If keep(r) Then
+            k = k + 1
+            tmpSrc(k) = srcRow(r)
+            For c = 1 To cols
+                tmp(k, c) = data(r, c)
+            Next c
+        End If
+    Next r
+    data = tmp
+    srcRow = tmpSrc
+End Sub
+
+Private Function Add13Sgn(ByVal x As Double, ByVal y As Double) As Long
+    If x < y Then
+        Add13Sgn = -1
+    ElseIf x > y Then
+        Add13Sgn = 1
+    End If
+End Function
+
+' рік -> номер -> дата. Рівні рядки лишаються в порядку бази (стабільне сортування).
+Private Function Add13Cmp(ByVal a As Long, ByVal b As Long) As Long
+    Dim s As Long
+    s = Add13Sgn(m13Year(a), m13Year(b))
+    If s <> 0 Then
+        Add13Cmp = s
+        Exit Function
+    End If
+    s = Add13Sgn(m13Num(a), m13Num(b))
+    If s <> 0 Then
+        Add13Cmp = s
+        Exit Function
+    End If
+    Add13Cmp = Add13Sgn(m13Date(a), m13Date(b))
+End Function
+
+' "112/п/ІНЖ" -> 112 ; "14565-в" -> 14565 ; без числа на початку -> в кінець року
+Private Function Add13LeadingNumber(ByVal s As String) As Double
+    Dim i As Long
+    s = Trim$(s)
+    i = 1
+    Do While i <= Len(s)
+        If Not (Mid$(s, i, 1) Like "#") Then Exit Do
+        i = i + 1
+    Loop
+    If i > 1 Then
+        Add13LeadingNumber = val(Left$(s, i - 1))
+    Else
+        Add13LeadingNumber = 1E+300
+    End If
+End Function
+
+Private Sub Add13SortRows(ByRef data() As Variant, ByRef srcRow() As Long)
+    Dim n As Long, cols As Long
+    Dim i As Long, j As Long, c As Long
+    Dim idx() As Long
+    Dim cur As Long
+    Dim dt As Date
+    Dim tmp() As Variant
+    Dim tmpSrc() As Long
+
+    n = UBound(data, 1) - 1
+    If n < 2 Then Exit Sub
+    cols = UBound(data, 2)
+
+    ReDim m13Year(1 To n)
+    ReDim m13Num(1 To n)
+    ReDim m13Date(1 To n)
+    ReDim idx(1 To n)
+
+    For i = 1 To n
+        If TryGetDate(data(i + 1, 13), dt) Then
+            m13Date(i) = CDbl(dt)
+            m13Year(i) = Year(dt)
+        Else
+            m13Date(i) = 0
+            m13Year(i) = 9999
+        End If
+        m13Num(i) = Add13LeadingNumber(SafeStr(data(i + 1, 14)))
+        idx(i) = i
+    Next i
+
+    ' сортування вставками (стабільне)
+    For i = 2 To n
+        cur = idx(i)
+        j = i - 1
+        Do While j >= 1
+            If Add13Cmp(idx(j), cur) <= 0 Then Exit Do
+            idx(j + 1) = idx(j)
+            j = j - 1
+        Loop
+        idx(j + 1) = cur
+    Next i
+
+    ReDim tmp(1 To n + 1, 1 To cols)
+    ReDim tmpSrc(1 To n + 1)
+    For c = 1 To cols
+        tmp(1, c) = data(1, c)
+    Next c
+    For i = 1 To n
+        tmpSrc(i + 1) = srcRow(idx(i) + 1)
+        For c = 1 To cols
+            tmp(i + 1, c) = data(idx(i) + 1, c)
+        Next c
+    Next i
+    data = tmp
+    srcRow = tmpSrc
+End Sub
+
 ' ---------- формування додатка ----------
 
 Sub CreateAdd13()
@@ -121,6 +302,10 @@ Sub CreateAdd13()
     Dim generalInfo As String
     Dim quantity As Double, previousQuantyty As Double, actualQuantyty As Double
     Dim v21 As Variant
+    Dim kind As Long, dirSign As Long, tgtRow As Long, colIn As Long
+    Dim curBal As Double
+    Dim skippedCnt As Long, negCount As Long
+    Dim negText As String
     Dim msgRow As String, problems As String, problemCount As Long
 
     On Error GoTo ErrHandler
@@ -190,6 +375,15 @@ Sub CreateAdd13()
         Next rowCell
     Next area
 
+    ' --- залишаємо лише НАКЛАДНІ: видача на підрозділ і повернення на склад ---
+    Add13KeepInvoices filteredData, srcRow, skippedCnt
+    rowCount = UBound(filteredData, 1) - 1
+    If rowCount < 1 Then
+        MsgBox "Серед відібраних записів немає накладних з видачею майна на підрозділ або поверненням на склад.", _
+               vbInformation, "Немає даних"
+        GoTo CleanUp
+    End If
+
     ' --- ПЕРЕВІРКА ДАНИХ перед заповненням ---
     problems = ""
     problemCount = 0
@@ -209,6 +403,10 @@ Sub CreateAdd13()
             Case "вибуття"
                 If Not IsGoodNumber(filteredData(n, 7)) Then
                     msgRow = msgRow & " кількість вибуття [" & SafeStr(filteredData(n, 7)) & "];"
+                End If
+            Case "внутрішнє переміщення"
+                If Not IsGoodNumber(filteredData(n, 6)) And Not IsGoodNumber(filteredData(n, 7)) Then
+                    msgRow = msgRow & " кількість переміщення [" & SafeStr(filteredData(n, 6)) & " / " & SafeStr(filteredData(n, 7)) & "];"
                 End If
             Case Else
                 msgRow = msgRow & " тип операції [" & SafeStr(filteredData(n, 26)) & "];"
@@ -230,6 +428,9 @@ Sub CreateAdd13()
                vbCritical, "Неправильні дані в базі"
         GoTo CleanUp
     End If
+
+    ' --- сортування: рік накладної -> номер -> дата ---
+    Add13SortRows filteredData, srcRow
 
     ' --- Основний цикл ---
     ' заголовок з назвою майна і категоріями
@@ -313,58 +514,53 @@ Sub CreateAdd13()
             wsAdd13.Cells(22, LastColumn + 3).value = lastNumber + 3
         End If
 
-        Select Case typeOperation
+        ' --- напрямок: ВИДАЧА на підрозділ = НАДІЙШЛО, ПОВЕРНЕННЯ на склад = ВИБУЛО ---
+        kind = Add13Kind(docName, typeOperation, SafeStr(filteredData(n, 8)), SafeStr(filteredData(n, 9)))
+        If kind = 1 Then
+            quantity = ToNum(filteredData(n, 7))                     ' видача: кількість у "Вибуло"
+            If quantity = 0 Then quantity = ToNum(filteredData(n, 6))
+            dirSign = 1
+        Else
+            quantity = ToNum(filteredData(n, 6))                     ' повернення: кількість у "Надійшло"
+            If quantity = 0 Then quantity = ToNum(filteredData(n, 7))
+            dirSign = -1
+        End If
 
-            Case "надходження"
-                quantity = ToNum(filteredData(n, 6))
+        If DocExist Then
+            tgtRow = DocRow
+        Else
+            tgtRow = lastRow13
+        End If
 
-                If Not nameExist Then
-                    If Not DocExist Then
-                        wsAdd13.Cells(lastRow13, LastColumn + 1).value = quantity
-                        wsAdd13.Cells(lastRow13, LastColumn + 3).value = quantity
-                    Else
-                        wsAdd13.Cells(DocRow, LastColumn + 1).value = quantity
-                        wsAdd13.Cells(DocRow, LastColumn + 3).value = quantity
-                    End If
-                Else
-                    previousQuantyty = ToNum(wsAdd13.Cells(lastRow13 - 1, foundCell.Column + 2).value)
-                    actualQuantyty = previousQuantyty + quantity
+        If Not nameExist Then
+            ' нове майно: колонки створені вище (LastColumn+1 надійшло, +2 вибуло, +3 становить)
+            If dirSign > 0 Then
+                wsAdd13.Cells(tgtRow, LastColumn + 1).value = quantity
+            Else
+                wsAdd13.Cells(tgtRow, LastColumn + 2).value = quantity
+            End If
+            curBal = dirSign * quantity
+            wsAdd13.Cells(tgtRow, LastColumn + 3).value = curBal
+        Else
+            ' майно вже є: залишок = попередній залишок (він уже перенесений у цей рядок) +/- кількість
+            colIn = foundCell.Column
+            curBal = ToNum(wsAdd13.Cells(tgtRow, colIn + 2).value) + dirSign * quantity
+            wsAdd13.Cells(tgtRow, colIn + 2).value = curBal
+            If dirSign > 0 Then
+                wsAdd13.Cells(tgtRow, colIn).value = ToNum(wsAdd13.Cells(tgtRow, colIn).value) + quantity
+            Else
+                wsAdd13.Cells(tgtRow, colIn + 1).value = ToNum(wsAdd13.Cells(tgtRow, colIn + 1).value) + quantity
+            End If
+        End If
 
-                    If Not DocExist Then
-                        wsAdd13.Cells(lastRow13, foundCell.Column + 2).value = actualQuantyty
-                        wsAdd13.Cells(lastRow13, foundCell.Column).value = quantity
-                    Else
-                        wsAdd13.Cells(DocRow, foundCell.Column + 2).value = actualQuantyty
-                        ' додаємо попередню кількість (однаковий документ, але різні МВО)
-                        wsAdd13.Cells(DocRow, foundCell.Column).value = quantity + ToNum(wsAdd13.Cells(DocRow, foundCell.Column).value)
-                    End If
-                End If
-
-            Case "вибуття"
-                quantity = ToNum(filteredData(n, 7))
-
-                If Not nameExist Then
-                    If Not DocExist Then
-                        wsAdd13.Cells(lastRow13, LastColumn + 2).value = quantity
-                        wsAdd13.Cells(lastRow13, LastColumn + 3).value = -quantity
-                    Else
-                        wsAdd13.Cells(DocRow, LastColumn + 2).value = quantity
-                        wsAdd13.Cells(DocRow, LastColumn + 3).value = -quantity
-                    End If
-                Else
-                    previousQuantyty = ToNum(wsAdd13.Cells(lastRow13 - 1, foundCell.Column + 2).value)
-                    actualQuantyty = previousQuantyty - quantity
-
-                    If Not DocExist Then
-                        wsAdd13.Cells(lastRow13, foundCell.Column + 2).value = actualQuantyty
-                        wsAdd13.Cells(lastRow13, foundCell.Column + 1).value = quantity
-                    Else
-                        wsAdd13.Cells(DocRow, foundCell.Column + 2).value = actualQuantyty
-                        wsAdd13.Cells(DocRow, foundCell.Column + 1).value = quantity + ToNum(wsAdd13.Cells(DocRow, foundCell.Column + 1).value)
-                    End If
-                End If
-
-        End Select
+        ' повернули більше, ніж видали -> залишок від'ємний
+        If curBal < -0.000001 Then
+            negCount = negCount + 1
+            If negCount <= 10 Then
+                negText = negText & itemName & ": накладна " & NumberDocument & " від " & Format$(DateDocument, "dd.mm.yyyy") & _
+                          ", залишок " & curBal & vbCrLf
+            End If
+        End If
 
         ' копіюємо стилі загальної інформації для нового рядка
         If Not DocExist Then
@@ -389,7 +585,14 @@ Sub CreateAdd13()
         wsAdd13.Range(wsAdd13.Cells(23, 9), wsAdd13.Cells(lastRowFinal, LastColumnFinal)).PasteSpecial Paste:=xlPasteFormats
     End If
 
-    MsgBox "Додаток сформовано. Оброблено записів: " & rowCount, vbInformation, "Готово"
+    msgRow = "Додаток сформовано." & vbCrLf & "Оброблено накладних (видача / повернення): " & rowCount
+    If skippedCnt > 0 Then msgRow = msgRow & vbCrLf & "Не підтягнуто (не накладні або інші операції): " & skippedCnt
+    If negCount > 0 Then
+        msgRow = msgRow & vbCrLf & vbCrLf & "УВАГА: від'ємний залишок (повернено більше, ніж видано?): " & negCount & vbCrLf & negText
+        MsgBox msgRow, vbExclamation, "Готово, є попередження"
+    Else
+        MsgBox msgRow, vbInformation, "Готово"
+    End If
 
 CleanUp:
     On Error Resume Next
@@ -468,4 +671,6 @@ WrongPath:
            "Перевірте адресу збереження (на зразок ""D:\База обліку майна ЗСУ 2024"", без косої лінії в кінці) і спробуйте ще раз.", _
            vbCritical, "Неправильний шлях збереження"
 End Sub
+
+
 

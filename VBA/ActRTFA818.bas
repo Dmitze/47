@@ -70,7 +70,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
             Dim name As String
             Dim Nomenclature As String
             Dim unit As String
-            Dim Category As String
+            Dim category As String
             Dim NoteKt As String
             Dim price As Double
             Dim VAT As Double
@@ -100,7 +100,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
             
            
             
-            Category = InputBox("Категорія відправника: ", NameOfThings, rngWithName.Offset(, -8).value)
+            category = InputBox("Категорія відправника: ", NameOfThings, rngWithName.Offset(, -8).value)
             CategoryTo = InputBox("Категорія отримувача: ", NameOfThings, rngWithName.Offset(, -8).value)
 '            VAT = InputBox("ПДВ (за наявності): ", NameOfThings, 0)
 '            Note1 = InputBox("Додаткове поле 1", NameOfThings, rngWithName.Offset(, -5).value)
@@ -111,7 +111,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
                     .Cells(1, 1) = name
                     .Cells(1, 2) = Nomenclature
                     .Cells(1, 3) = unit
-                    .Cells(1, 8) = Category
+                    .Cells(1, 8) = category
                     .Cells(1, 5) = price
                     .Cells(1, 4) = CDbl(quantity)
                     .Cells(1, 7) = Note
@@ -128,7 +128,7 @@ If tempPoolOThings Is Nothing Then Exit Sub
                     .Cells(1, 1) = name
                     .Cells(1, 2) = Nomenclature
                     .Cells(1, 3) = unit
-                    .Cells(1, 8) = Category
+                    .Cells(1, 8) = category
                     .Cells(1, 5) = price
                     .Cells(1, 4) = CDbl(quantity)
                     .Cells(1, 7) = Note

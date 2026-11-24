@@ -1,4 +1,5 @@
 Attribute VB_Name = "InvertoryNonCurrentAssets"
+
 'Inventory Формування інвентаризиційного опису
 
 Option Explicit
@@ -17,6 +18,7 @@ Public Sub BuildInventoryReportNCA()
     Dim SerialNumber As String
     Dim qty As Double, price As Double, d As Date, key As String
     Dim account As String
+    Dim invDateCutoff As Date
 
     Dim outRow As Long
     Dim k As Variant, parts As Variant, bal As Double
@@ -121,6 +123,11 @@ dictAllowedAccounts.CompareMode = vbTextCompare
 Set tbAccaunts = ThisWorkbook.Worksheets("Довідники").ListObjects("tbAccaunts")
 
 selectedAccountType = ws.Range("invAccauntType").value
+' Дата зрізу інвентаризації: операції з датою документа пізніше цієї дати не враховуються
+invDateCutoff = 0
+On Error Resume Next
+If IsDate(ws.Range("invAsOf").value) Then invDateCutoff = CDate(ws.Range("invAsOf").value)
+On Error GoTo 0
 
 ' Формуємо перелік дозволених субрахунків
 For Each accRow In tbAccaunts.ListRows
@@ -159,10 +166,12 @@ Next accRow
 
     ' --- Обхід рядків БАЗИ: накопичення балансу по unitFilter ---
     For r = 2 To lastRow
-        If IsDate(wsSrc.Cells(r, "A").value) Then
-            d = CDate(wsSrc.Cells(r, "A").value)
-        Else
-            GoTo NextRow
+        If invDateCutoff > 0 Then
+            If IsDate(wsSrc.Cells(r, "M").value) Then
+                If CDate(wsSrc.Cells(r, "M").value) > invDateCutoff Then GoTo NextRow
+            ElseIf IsDate(wsSrc.Cells(r, "A").value) Then
+                If CDate(wsSrc.Cells(r, "A").value) > invDateCutoff Then GoTo NextRow
+            End If
         End If
 
         itemName = Trim$(CStr(wsSrc.Cells(r, "B").value)) 'найменування
@@ -187,28 +196,36 @@ Next accRow
         key = itemName & "|" & CStr(price) & "|" & CStr(uom) & "|" & CStr(itemCode) & "|" & CStr(SerialNumber)
 
         ' --- Надходження ---
-        If opType = "надходження" And IsNumeric(wsSrc.Cells(r, "F").value) Then
-            qty = CDbl(wsSrc.Cells(r, "F").value)
-            If unitIn = unitFilter Then
+        If opType = "надходження" Then
+            qty = 0#
+            If IsNumeric(wsSrc.Cells(r, "F").value) Then qty = CDbl(wsSrc.Cells(r, "F").value)
+            If qty = 0# And IsNumeric(wsSrc.Cells(r, "G").value) Then qty = CDbl(wsSrc.Cells(r, "G").value)
+            If qty <> 0# And unitIn = unitFilter Then
                 AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, qty, uom, itemCode, price, account, SerialNumber
             End If
         End If
 
         ' --- Внутрішнє переміщення ---
-        If opType = "внутрішнє переміщення" And IsNumeric(wsSrc.Cells(r, "G").value) Then
-            qty = CDbl(wsSrc.Cells(r, "G").value)
-            If unitOut = unitFilter Then
-                AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, -qty, uom, itemCode, price, account, SerialNumber
-            End If
-            If unitIn = unitFilter Then
-                AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, qty, uom, itemCode, price, account, SerialNumber
+        If opType = "внутрішнє переміщення" Then
+            qty = 0#
+            If IsNumeric(wsSrc.Cells(r, "G").value) Then qty = CDbl(wsSrc.Cells(r, "G").value)
+            If qty = 0# And IsNumeric(wsSrc.Cells(r, "F").value) Then qty = CDbl(wsSrc.Cells(r, "F").value)
+            If qty <> 0# Then
+                If unitOut = unitFilter Then
+                    AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, -qty, uom, itemCode, price, account, SerialNumber
+                End If
+                If unitIn = unitFilter Then
+                    AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, qty, uom, itemCode, price, account, SerialNumber
+                End If
             End If
         End If
 
         ' --- Вибуття ---
-        If opType = "вибуття" And IsNumeric(wsSrc.Cells(r, "G").value) Then
-            qty = CDbl(wsSrc.Cells(r, "G").value)
-            If unitOut = unitFilter Then
+        If opType = "вибуття" Then
+            qty = 0#
+            If IsNumeric(wsSrc.Cells(r, "G").value) Then qty = CDbl(wsSrc.Cells(r, "G").value)
+            If qty = 0# And IsNumeric(wsSrc.Cells(r, "F").value) Then qty = CDbl(wsSrc.Cells(r, "F").value)
+            If qty <> 0# And unitOut = unitFilter Then
                 AccumulateBalance dictBal, dictUom, dictCode, dictPrice, dictAccount, dictSerialNumber, key, -qty, uom, itemCode, price, account, SerialNumber
             End If
         End If
@@ -708,23 +725,24 @@ Sub SaveInventoryNCA()
         shp.Delete
     Next shp
     
-    For Each cell In WbNew.Worksheets(1).Range(Cells(1, 1), Cells(WbNew.Worksheets(1).Range("invLastRow").Row, 17))
-        If cell.HasFormula Then
-            cell.value = cell.value
-        End If
-    Next cell
+    Dim wsNew As Worksheet
+    Set wsNew = WbNew.Worksheets(1)
     
+    Dim lastR As Long
+    lastR = wsNew.Range("invLastRow").Row
     
-        'зберігаємо файл
-'        On Error GoTo WrongPath
-         WbNew.SaveAs fileName:=ThisWorkbook.Path & Application.PathSeparator & _
-         CleanFileName("Інвентаризаційний опис НА " & WbNew.Worksheets(1).Range("invAsOf").value & " " & _
-          WbNew.Worksheets(1).Range("invUnit").value & ".xlsx"), FileFormat:=xlOpenXMLWorkbook
-'     On Error GoTo 0
-'      Exit Sub
-'WrongPath:
-     MsgBox "Інвентаризаційний опис збережений і тій же папці, де файл бази даних", vbInformation, ThisWorkbook.Path
-'     Exit Sub
+    With wsNew
+        .Range(.Cells(1, 1), .Cells(lastR, 17)).value = .Range(.Cells(1, 1), .Cells(lastR, 17)).value
+    End With
+    
+    ' Зберігаємо файл без попереджень про сумісність
+    Application.DisplayAlerts = False
+    WbNew.SaveAs fileName:=ThisWorkbook.Path & Application.PathSeparator & _
+        CleanFileName("Інвентаризаційний опис НА " & wsNew.Range("invAsOf").value & " " & _
+        wsNew.Range("invUnit").value & ".xlsx"), FileFormat:=xlOpenXMLWorkbook
+    Application.DisplayAlerts = True
+    
+    MsgBox "Інвентаризаційний опис збережений у тій же папці, де файл бази даних", vbInformation, "Збережено успішно"
      
 End Sub
 
@@ -733,3 +751,5 @@ End Sub
 ' Функції NumberToWordsUA та NumberToWordsUA_Grn викликаються у блоці "Разом за описом".
 ' Якщо їх немає в проекті, додайте реалізації або замініть виклики на інші.
 ' При потребі я можу додати реалізації перетворення чисел у слова українською.
+
+
